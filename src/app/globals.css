@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+/*
+ * `dark:*` utilities match `.dark` ancestors only (see superadmin `DashboardShell`).
+ * Marketing routes (`/`, `/login`, …) use explicit colors instead of OS `prefers-color-scheme`.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Brand palette — ONE X CLUB (from supplied logos): charcoal backgrounds, orange–gold accents.
+ * - Tailwind `orange-*` utilities align with primary CTAs (≈ #ea580c / #f97316).
+ * - Dashboard “skins”: `.dashboard-shell--superadmin` (premium dark + gradient accents via markup),
+ *   `.dashboard-shell--admin` (clean light surfaces + solid orange highlights).
+ * - Raster logos: `/public/brand/logo-wordmark.png`, `/public/brand/logo-emblem.png`.
+ * - App icons: `src/app/icon.png`, `src/app/apple-icon.png` (generated routes `/icon.png`, `/apple-icon.png`).
+ */
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Gradient text utility — platform shell headlines / CTAs (matches logo X stroke). */
+.text-gradient-brand {
+  background: linear-gradient(120deg, #ffd700 0%, #ff8c00 45%, #ea580c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
