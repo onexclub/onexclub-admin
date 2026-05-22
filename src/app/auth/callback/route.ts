@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { safeAuthNextPath } from "@/lib/auth/safe-next-path";
+import { sendCustomerWelcome } from "@/lib/email/send-welcome-emails";
 import { getPublicSupabaseEnv } from "@/lib/supabase/public-env";
 import { ROUTES } from "@/utils/routes";
 
@@ -12,6 +13,10 @@ import { ROUTES } from "@/utils/routes";
  *
  * Reuse: add OAuth providers later without duplicating cookie wiring — keep session
  * exchange in this single route and point Supabase “redirect to” URLs here.
+ *
+ * After a successful session (PKCE or OTP), we attempt {@link sendCustomerWelcome} so members who
+ * just confirmed their email receive the Resend welcome immediately. Duplicates are suppressed via
+ * `email_logs` when migration `021_email_logs.sql` is applied.
  */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
@@ -51,6 +56,14 @@ export async function GET(request: NextRequest) {
     if (error) {
       return NextResponse.redirect(errorRedirect);
     }
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user?.id) {
+      void sendCustomerWelcome(user.id).catch((err) =>
+        console.error("[email] customer welcome after auth callback:", err),
+      );
+    }
     return response;
   }
 
@@ -61,6 +74,14 @@ export async function GET(request: NextRequest) {
     });
     if (error) {
       return NextResponse.redirect(errorRedirect);
+    }
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user?.id) {
+      void sendCustomerWelcome(user.id).catch((err) =>
+        console.error("[email] customer welcome after OTP verify:", err),
+      );
     }
     return response;
   }

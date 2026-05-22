@@ -17,6 +17,7 @@ import {
   type GymDashboardOrganization,
   type ManagedOutletDetail,
 } from "@/lib/admin/gym-organization-shared";
+import { serializeWeeklyForCompare } from "@/lib/outlets/schedule";
 
 export function GymProfileSettingsSection({
   org,
@@ -30,6 +31,9 @@ export function GymProfileSettingsSection({
   canEditBranches: boolean;
 }) {
   const lines = org ? formatGymOrganizationAddressLines(org.address_json) : [];
+  const primaryWeeklyKey = outlets[0]
+    ? serializeWeeklyForCompare(outlets[0].opening_hours.weekly)
+    : "";
 
   return (
     <div className="space-y-8">
@@ -44,12 +48,21 @@ export function GymProfileSettingsSection({
       <div>
         <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Branch settings</h3>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Per-location address, contact, weekly hours (including split shifts and 24h), and dated exceptions in{" "}
-          <span className="font-mono">outlet_hours</span> / <span className="font-mono">outlet_hour_exceptions</span>.
+          Per-location address and contact. Operating hours are set on the{" "}
+          <span className="font-medium">first branch</span> — use &quot;Apply to all branches&quot; when saving, or
+          customize any branch individually.
         </p>
+
         <div className="mt-4 space-y-6">
-          {outlets.map((o) => (
-            <OutletBranchSettingsForm key={o.id} outlet={o} canEdit={canEditBranches} />
+          {outlets.map((o, index) => (
+            <OutletBranchSettingsForm
+              key={o.id}
+              outlet={o}
+              canEdit={canEditBranches}
+              scheduleRole={index === 0 ? "primary" : "override"}
+              allOutlets={outlets}
+              primaryWeeklyKey={primaryWeeklyKey}
+            />
           ))}
         </div>
       </div>

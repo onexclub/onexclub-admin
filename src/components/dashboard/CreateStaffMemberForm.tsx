@@ -4,7 +4,12 @@ import { useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createStaffMemberAction, type StaffActionState } from "@/app/dashboard/staff/actions";
 import { StaffAvatar } from "@/components/dashboard/StaffAvatar";
-import { ASSIGNABLE_ROLES, ROLE_META, type UserRole } from "@/lib/auth/roles";
+import { StaffBranchPickerFields } from "@/components/dashboard/StaffBranchPickerFields";
+import { ASSIGNABLE_ROLES, ROLE_META, ROLES, type AssignableStaffRole, type UserRole } from "@/lib/auth/roles";
+import {
+  isStaffPhoneRequiredForProvisioning,
+  staffProvisioningPhoneHint,
+} from "@/lib/auth/role-sign-in-policy";
 import { ROUTES } from "@/utils/routes";
 
 type OutletOption = { id: string; name: string | null };
@@ -22,13 +27,18 @@ const fieldClass =
 /**
  * Add-teammate form (`/dashboard/staff/new`) — password provisioning, optional photo.
  *
- * **Reuse:** Mirrors `AddCustomerOnboardWizard` Auth pattern without invite emails.
+ * **Reuse:** Mirrors `AddCustomerOnboardWizard` provisioning pattern without invite emails.
+ * Branch picker: `StaffBranchPickerFields` + `parseStaffBranchFormSelection` (same as detail page edit).
+ * Phone rules mirror `src/lib/auth/role-sign-in-policy.ts` (also documented in `docs/auth-by-role.md`).
  */
 export function CreateStaffMemberForm({ outlets }: { outlets: OutletOption[] }) {
   const router = useRouter();
   const [state, action, pending] = useActionState(createStaffMemberAction, INITIAL);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState<AssignableStaffRole>(ROLES.RECEPTIONIST);
+  const [branchSelectionValid, setBranchSelectionValid] = useState(true);
+  const phoneRequired = isStaffPhoneRequiredForProvisioning(role);
 
   const suggestedPassword = useMemo(() => randomTempPassword(), []);
 
@@ -67,6 +77,37 @@ export function CreateStaffMemberForm({ outlets }: { outlets: OutletOption[] }) 
       </section>
 
       <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/50">
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Branch & role</h2>
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+          Pick the role first — phone becomes required for reception and trainer. You can assign one branch or several
+          (e.g. a branch admin for all locations).
+        </p>
+        <div className="mt-4 space-y-4">
+          <label className="flex flex-col gap-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
+            Role
+            <select
+              name="role"
+              required
+              className={fieldClass}
+              value={role}
+              onChange={(e) => setRole(e.target.value as AssignableStaffRole)}
+            >
+              {ASSIGNABLE_ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_META[r as UserRole].label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <StaffBranchPickerFields
+            outlets={outlets}
+            defaultOutletId={outlets[0]?.id}
+            onValidChange={setBranchSelectionValid}
+          />
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/50">
         <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Account</h2>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm font-medium text-zinc-800 dark:text-zinc-100 sm:col-span-2">
@@ -78,8 +119,25 @@ export function CreateStaffMemberForm({ outlets }: { outlets: OutletOption[] }) 
             <input required name="email" type="email" className={fieldClass} placeholder="name@example.com" />
           </label>
           <label className="flex flex-col gap-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-            Phone
-            <input name="phone" type="tel" className={fieldClass} placeholder="+91 …" />
+            <span>
+              Phone
+              {phoneRequired ? (
+                <span className="ml-1 font-semibold text-rose-600 dark:text-rose-400" aria-hidden>
+                  *
+                </span>
+              ) : null}
+            </span>
+            <input
+              name="phone"
+              type="tel"
+              required={phoneRequired}
+              className={fieldClass}
+              placeholder="+91 …"
+              aria-required={phoneRequired}
+            />
+            <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
+              {staffProvisioningPhoneHint(role)}
+            </span>
           </label>
           <label className="flex flex-col gap-1 text-sm font-medium text-zinc-800 dark:text-zinc-100 sm:col-span-2">
             Temporary password
@@ -108,41 +166,11 @@ export function CreateStaffMemberForm({ outlets }: { outlets: OutletOption[] }) 
         </div>
       </section>
 
-      <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/50">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Branch & role</h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-            Branch
-            <select name="outlet_id" required className={fieldClass} defaultValue={outlets[0]?.id}>
-              {outlets.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name ?? o.id}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-            Role
-            <select name="role" required className={fieldClass} defaultValue="receptionist">
-              {ASSIGNABLE_ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_META[r as UserRole].label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300 sm:col-span-2">
-            <input type="checkbox" name="is_primary" defaultChecked className="size-4 rounded border-zinc-300" />
-            Main branch assignment
-          </label>
-        </div>
-      </section>
-
       {state.error ? <p className="text-sm text-rose-600">{state.error}</p> : null}
 
       <button
         type="submit"
-        disabled={pending}
+        disabled={pending || !branchSelectionValid}
         className="inline-flex h-11 items-center justify-center rounded-lg bg-orange-600 px-6 text-sm font-semibold text-white hover:bg-orange-700 disabled:opacity-70"
       >
         {pending ? "Creating…" : "Create team member"}

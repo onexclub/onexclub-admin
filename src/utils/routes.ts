@@ -13,12 +13,18 @@ export const ROUTES = {
   superadminOnboard: "/superadmin/onboard",
   /** All onboarded organizations (gym brands); branch detail lives under `/superadmin/gyms/[orgId]`. */
   superadminGyms: "/superadmin/gyms",
+  /** Cross-tenant roster: `gym_memberships` rows (one detail URL per membership / branch pair). */
+  superadminCustomers: "/superadmin/customers",
   /** New RBAC-aligned gym console (preferred). Historic `/admin` routes redirect via middleware. */
   dashboard: "/dashboard",
   dashboardStaff: "/dashboard/staff",
   dashboardStaffNew: "/dashboard/staff/new",
   dashboardCustomers: "/dashboard/customers",
-  /** Add customer wizard (Auth member + questionnaires) — `/admin/members/onboard` is an alias shell route. */
+  /** Add customer 5-step wizard — `/dashboard/customers/onboard` redirects here for legacy bookmarks. */
+  dashboardCustomerNew: "/dashboard/customers/new",
+  /** Resume explicit localStorage draft from `/dashboard/customers?tab=drafts`. */
+  dashboardCustomerNewResume: "/dashboard/customers/new?resume=1",
+  /** @deprecated Use {@link ROUTES.dashboardCustomerNew}. Kept for middleware + old links. */
   dashboardCustomerOnboard: "/dashboard/customers/onboard",
   dashboardBranches: "/dashboard/branches",
   dashboardPlans: "/dashboard/plans",
@@ -37,6 +43,11 @@ export const ROUTES = {
 /** One member’s record in the gym console (a `gym_memberships` row). Use with `revalidatePath`. */
 export function dashboardCustomerMembershipPath(membershipId: string): string {
   return `${ROUTES.dashboardCustomers}/${membershipId}`;
+}
+
+/** Superadmin customer workspace (platform scope). */
+export function superadminCustomerMembershipPath(membershipId: string): string {
+  return `${ROUTES.superadminCustomers}/${membershipId}`;
 }
 
 /** One teammate row (`staff_assignments.id`). Use with `revalidatePath`. */

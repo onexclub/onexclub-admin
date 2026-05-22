@@ -2,15 +2,14 @@
 
 import Link from "next/link";
 import { useActionState, useState, type ReactNode } from "react";
-import {
-  revokeStaffAssignmentAction,
-  updateStaffAssignmentAction,
-  updateStaffProfileAction,
-  type StaffActionState,
-} from "@/app/dashboard/staff/actions";
+import { revokeStaffAssignmentAction, updateStaffProfileAction, type StaffActionState } from "@/app/dashboard/staff/actions";
 import { StaffAvatar } from "@/components/dashboard/StaffAvatar";
+import { StaffBranchAccessSection } from "@/components/dashboard/StaffBranchAccessSection";
+import type { StaffBranchAssignmentRow } from "@/lib/admin/staff-branch-assignments";
 import { Badge } from "@/components/ui/badge";
-import { ASSIGNABLE_ROLES, ROLE_META, type UserRole } from "@/lib/auth/roles";
+import { ASSIGNABLE_ROLES, ROLE_META, type AssignableStaffRole, type UserRole } from "@/lib/auth/roles";
+import { isStaffPhoneRequiredForProvisioning, staffProvisioningPhoneHint } from "@/lib/auth/role-sign-in-policy";
+import { formatMembershipTimestampUtcLabel } from "@/lib/date-term";
 import { ROUTES } from "@/utils/routes";
 
 type OutletOption = { id: string; name: string | null };
@@ -53,11 +52,13 @@ function Section({ title, description, children }: { title: string; description?
 export function StaffMemberDetail({
   row,
   outlets,
+  branchAssignments,
   canManage,
   initialEdit,
 }: {
   row: StaffMemberDetailRow;
   outlets: OutletOption[];
+  branchAssignments: StaffBranchAssignmentRow[];
   canManage: boolean;
   initialEdit: boolean;
 }) {
@@ -65,14 +66,19 @@ export function StaffMemberDetail({
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
 
   const [profileState, profileAction, profilePending] = useActionState(updateStaffProfileAction, {} as StaffActionState);
-  const [assignmentState, assignmentAction, assignmentPending] = useActionState(
-    updateStaffAssignmentAction,
-    {} as StaffActionState,
-  );
 
   const roleKey = row.role as UserRole;
+  const roleSlugs = ASSIGNABLE_ROLES as readonly string[];
+  const isAssignableStaff = roleSlugs.includes(row.role);
+  const phoneRequired =
+    isAssignableStaff && isStaffPhoneRequiredForProvisioning(row.role as AssignableStaffRole);
   const roleLabel = ROLE_META[roleKey]?.label ?? row.role.replace(/_/g, " ");
   const outletLabel = [row.outlet?.name, row.outlet?.city].filter(Boolean).join(" · ");
+  const outletNameById = Object.fromEntries(outlets.map((o) => [o.id, o.name ?? o.id]));
+  const branchLabels =
+    branchAssignments.length > 1
+      ? branchAssignments.map((a) => outletNameById[a.outletId] ?? a.outletId).join(", ")
+      : outletLabel || row.outletId;
   const displayName = row.profile.fullName || row.profile.email || "Team member";
   const statusVariant = row.invitePending ? "warning" : "success";
   const statusLabel = row.invitePending ? "Invite pending" : "Active";
@@ -94,6 +100,9 @@ export function StaffMemberDetail({
               <Badge variant={statusVariant}>{statusLabel}</Badge>
               <Badge variant="outline">{roleLabel}</Badge>
               {row.isPrimary ? <Badge variant="default">Primary branch</Badge> : null}
+              {branchAssignments.length > 1 ? (
+                <Badge variant="outline">{branchAssignments.length} branches</Badge>
+              ) : null}
             </div>
           </div>
         </div>
@@ -125,14 +134,16 @@ export function StaffMemberDetail({
 
           <Section title="Assignment">
             <dl className="grid gap-3 text-sm sm:grid-cols-2">
-              <div>
-                <dt className="text-zinc-500 dark:text-zinc-400">Branch</dt>
-                <dd className="font-medium text-zinc-900 dark:text-zinc-100">{outletLabel || row.outletId}</dd>
+              <div className={branchAssignments.length > 1 ? "sm:col-span-2" : undefined}>
+                <dt className="text-zinc-500 dark:text-zinc-400">
+                  {branchAssignments.length > 1 ? "Branches" : "Branch"}
+                </dt>
+                <dd className="font-medium text-zinc-900 dark:text-zinc-100">{branchLabels}</dd>
               </div>
               <div>
                 <dt className="text-zinc-500 dark:text-zinc-400">Joined</dt>
                 <dd className="font-medium text-zinc-900 dark:text-zinc-100">
-                  {row.assignedAt ? new Date(row.assignedAt).toLocaleDateString() : "—"}
+                  {formatMembershipTimestampUtcLabel(row.assignedAt)}
                 </dd>
               </div>
             </dl>
@@ -161,8 +172,27 @@ export function StaffMemberDetail({
                 <input name="full_name" defaultValue={row.profile.fullName ?? ""} className={fieldClass} />
               </label>
               <label className="flex flex-col gap-1 text-sm font-medium">
-                Phone
-                <input name="phone" defaultValue={row.profile.phone ?? ""} className={fieldClass} />
+                <span>
+                  Phone
+                  {phoneRequired ? (
+                    <span className="ml-1 font-semibold text-rose-600 dark:text-rose-400" aria-hidden>
+                      *
+                    </span>
+                  ) : null}
+                </span>
+                <input
+                  name="phone"
+                  type="tel"
+                  required={phoneRequired}
+                  defaultValue={row.profile.phone ?? ""}
+                  className={fieldClass}
+                  aria-required={phoneRequired}
+                />
+                {isAssignableStaff ? (
+                  <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                    {staffProvisioningPhoneHint(row.role as AssignableStaffRole)}
+                  </span>
+                ) : null}
               </label>
               <div className="sm:col-span-2">
                 <button
@@ -180,48 +210,13 @@ export function StaffMemberDetail({
             </form>
           </Section>
 
-          <Section title="Role & branch">
-            <form action={assignmentAction} className="grid gap-4 sm:grid-cols-2">
-              <input type="hidden" name="assignment_id" value={row.assignmentId} />
-              <label className="flex flex-col gap-1 text-sm font-medium">
-                Branch
-                <select name="outlet_id" defaultValue={row.outletId} className={fieldClass}>
-                  {outlets.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.name ?? o.id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1 text-sm font-medium">
-                Role
-                <select name="role" defaultValue={row.role} className={fieldClass}>
-                  {ASSIGNABLE_ROLES.map((r) => (
-                    <option key={r} value={r}>
-                      {ROLE_META[r as UserRole].label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center gap-2 text-sm sm:col-span-2">
-                <input type="checkbox" name="is_primary" defaultChecked={row.isPrimary} className="size-4 rounded" />
-                Main branch assignment
-              </label>
-              <div className="sm:col-span-2">
-                <button
-                  type="submit"
-                  disabled={assignmentPending}
-                  className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900"
-                >
-                  {assignmentPending ? "Saving…" : "Save assignment"}
-                </button>
-                {assignmentState.error ? <p className="mt-2 text-sm text-rose-600">{assignmentState.error}</p> : null}
-                {assignmentState.success ? (
-                  <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-300">{assignmentState.success}</p>
-                ) : null}
-              </div>
-            </form>
-          </Section>
+          <StaffBranchAccessSection
+            assignmentId={row.assignmentId}
+            currentOutletId={row.outletId}
+            role={row.role}
+            outlets={outlets}
+            branchAssignments={branchAssignments}
+          />
 
           <Section title="Remove access" description="Soft-revokes this branch assignment. History is kept for audits.">
             <form action={revokeStaffAssignmentAction}>

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Suspense } from "react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
+import { QueryProvider } from "@/components/providers/QueryProvider";
 import { SuperadminFlashBanner } from "@/components/superadmin/SuperadminFlashBanner";
 import { getAuthDashboardContext } from "@/services/auth.service";
 import { ROLES } from "@/types/roles";
@@ -11,6 +12,7 @@ import { redirect } from "next/navigation";
 const NAV = [
   { href: ROUTES.superadmin, label: "Platform dashboard" },
   { href: ROUTES.superadminGyms, label: "All gyms" },
+  { href: ROUTES.superadminCustomers, label: "All customers" },
   { href: `${ROUTES.superadmin}/subscriptions`, label: "Subscriptions (placeholder)" },
   { href: `${ROUTES.superadmin}/settings`, label: "Platform settings (placeholder)" },
 ];
@@ -30,7 +32,8 @@ export default async function SuperadminLayout({ children }: { children: ReactNo
       <Suspense fallback={null}>
         <SuperadminFlashBanner />
       </Suspense>
-      {children}
+      {/* Same as `/dashboard/layout.tsx`: profile workspace intake tabs use TanStack Query. */}
+      <QueryProvider>{children}</QueryProvider>
     </DashboardShell>
   );
 }

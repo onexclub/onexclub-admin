@@ -10,8 +10,9 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import {
   STAFF_ROSTER_SELECT,
   fetchStaffProfilesByIds,
+  groupStaffRosterByProfile,
   resolveStaffRosterProfile,
-  staffOutletFromRow,
+  staffRosterBranchLines,
   type StaffRosterRow,
 } from "@/lib/admin/staff-roster";
 import type { DashboardFeature } from "@/lib/auth/roles";
@@ -96,8 +97,8 @@ export default async function DashboardStaffPage({
   }
 
   const canInvite = canManageStaffAssignments(ctx.appRole);
-  const canMutateOwners = ctx.appRole === ROLES.SUPERADMIN || ctx.appRole === ROLES.GYM_OWNER;
   const hasActiveFilters = Boolean(q || outletFilter || roleFilter);
+  const rosterGroups = groupStaffRosterByProfile(sanitizedRows);
 
   return (
     <RoleGuard role={ctx.appRole} feature={FEATURE}>
@@ -106,7 +107,7 @@ export default async function DashboardStaffPage({
           <div>
             <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Team</h2>
             <p className="mt-2 max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
-              People who work at your branches — reception, coaches, and branch admins. Gym owners aren’t duplicated in this list.
+              One row per teammate; branches they cover are listed together. Open View to edit profile or branch access.
             </p>
           </div>
           {canInvite ? (
@@ -149,7 +150,7 @@ export default async function DashboardStaffPage({
 
             {error ? (
               <EmptyState title="Couldn't load roster" description={error.message} />
-            ) : !sanitizedRows.length ? (
+            ) : !rosterGroups.length ? (
               <EmptyState
                 title={hasActiveFilters ? "No matches" : canInvite ? "No teammates listed yet" : "No teammates to show"}
                 description={
@@ -173,18 +174,19 @@ export default async function DashboardStaffPage({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                    {sanitizedRows.map((row) => {
-                      const profile = resolveStaffRosterProfile(row, profileById);
-                      const outlet = staffOutletFromRow(row);
-                      const roleKey = row.role as UserRole;
-                      const roleLabel = ROLE_META[roleKey]?.label ?? row.role.replace(/_/g, " ");
-                      const statusVariant = row.invite_pending ? "warning" : "success";
-                      const statusLabel = row.invite_pending ? "Invite pending" : "Active";
-                      const detailHref = dashboardStaffAssignmentPath(row.id);
+                    {rosterGroups.map((group) => {
+                      const lead = group.assignments[0]!;
+                      const profile = resolveStaffRosterProfile(lead, profileById);
+                      const roleKey = group.role as UserRole;
+                      const roleLabel = ROLE_META[roleKey]?.label ?? group.role.replace(/_/g, " ");
+                      const statusVariant = group.invitePending ? "warning" : "success";
+                      const statusLabel = group.invitePending ? "Invite pending" : "Active";
+                      const detailHref = dashboardStaffAssignmentPath(group.detailAssignmentId);
                       const displayName = profile?.full_name?.trim() || profile?.email || "Unnamed";
+                      const branchLines = staffRosterBranchLines(group.assignments);
 
                       return (
-                        <tr key={row.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-900/40">
+                        <tr key={group.profileId} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-900/40">
                           <td className="px-4 py-3">
                             <Link href={detailHref} className="flex items-center gap-3 group">
                               <StaffAvatar
@@ -205,19 +207,24 @@ export default async function DashboardStaffPage({
                           </td>
                           <td className="px-4 py-3 text-zinc-800 dark:text-zinc-200">{roleLabel}</td>
                           <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
-                            {outlet?.name ?? row.outlet_id}
-                            {outlet?.city ? ` · ${outlet.city}` : ""}
-                            {row.is_primary ? (
-                              <span className="mt-1 block text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-                                Primary
-                              </span>
-                            ) : null}
+                            <ul className="space-y-1">
+                              {branchLines.map((branch) => (
+                                <li key={branch.outletId} className="leading-snug">
+                                  {branch.label}
+                                  {branch.isPrimary ? (
+                                    <span className="ml-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+                                      Primary
+                                    </span>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
                           </td>
                           <td className="px-4 py-3">
                             <Badge variant={statusVariant}>{statusLabel}</Badge>
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <StaffAssignmentRowActions assignmentId={row.id} canManage={canMutateOwners} />
+                            <StaffAssignmentRowActions assignmentId={group.detailAssignmentId} />
                           </td>
                         </tr>
                       );

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { addDaysFromIsoDate, todayUtcIsoDate } from "@/lib/date-term";
+import { createServiceRoleSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   canAssignDedicatedTrainer,
@@ -10,7 +11,14 @@ import {
   canSuspendMembership,
 } from "@/lib/auth/roles";
 import { canManageOutletForBranchAdmin, getAuthDashboardContext } from "@/services/auth.service";
-import { ROUTES, dashboardCustomerMembershipPath } from "@/utils/routes";
+import { parseProfileVitalsFromFormData } from "@/lib/profile/vitals";
+import { auditActorOnUpdate } from "@/lib/supabase/audit-columns";
+import {
+  contactTakenByOtherProfile,
+  formatContactConflictError,
+} from "@/lib/customers/customer-lookup";
+import { normalizeToE164 } from "@/lib/auth/phone-e164";
+import { ROUTES, dashboardCustomerMembershipPath, superadminCustomerMembershipPath } from "@/utils/routes";
 
 export type AssignMembershipPlanState = { error?: string; success?: string };
 
@@ -98,8 +106,11 @@ export async function assignMembershipPlanAction(
   revalidatePath(ROUTES.adminCustomers);
   revalidatePath(ROUTES.dashboardCustomers);
   revalidatePath(dashboardCustomerMembershipPath(membershipId));
+  revalidatePath(superadminCustomerMembershipPath(membershipId));
+  revalidatePath(ROUTES.superadminCustomers);
   revalidatePath(ROUTES.admin);
   revalidatePath(ROUTES.dashboard);
+  revalidatePath(ROUTES.dashboardCustomerNew);
   revalidatePath(ROUTES.dashboardCustomerOnboard);
   revalidatePath(ROUTES.adminMemberOnboard);
   return {
@@ -142,6 +153,8 @@ export async function suspendMembershipAction(
   revalidatePath(ROUTES.adminCustomers);
   revalidatePath(ROUTES.dashboardCustomers);
   revalidatePath(dashboardCustomerMembershipPath(membershipId));
+  revalidatePath(superadminCustomerMembershipPath(membershipId));
+  revalidatePath(ROUTES.superadminCustomers);
   revalidatePath(ROUTES.dashboard);
   return { success: "Membership suspended." };
 }
@@ -184,12 +197,19 @@ export async function assignTrainerToMembershipAction(
   revalidatePath(ROUTES.adminCustomers);
   revalidatePath(ROUTES.dashboardCustomers);
   revalidatePath(dashboardCustomerMembershipPath(membershipId));
+  revalidatePath(superadminCustomerMembershipPath(membershipId));
+  revalidatePath(ROUTES.superadminCustomers);
   revalidatePath(ROUTES.dashboard);
   return { success: "Trainer assignment updated." };
 }
 
 /**
  * Updates member-facing profile fields for front-desk edits (RLS allows owners/admins/receptionists).
+ *
+ * **Email:** optional for phone-primary members; when set/changed, updates both `profiles.email` and
+ * `auth.users.email` (service role) so sign-in and CRM stay aligned. Clearing the field sets
+ * `profiles.email` to null; Auth may still retain a previous address — prefer support tooling if
+ * a full unlink is required.
  */
 export async function updateCustomerProfileAction(
   _prev: SimpleActionState,
@@ -202,6 +222,7 @@ export async function updateCustomerProfileAction(
   const profileId = String(formData.get("profile_id") ?? "").trim();
   const full_name = String(formData.get("full_name") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim();
+  const emailRaw = String(formData.get("email") ?? "").trim().toLowerCase();
   const membershipOutletId = String(formData.get("membership_outlet_id") ?? "").trim();
   const membershipRecordId = String(formData.get("membership_id_for_revalidate") ?? "").trim();
 
@@ -209,23 +230,90 @@ export async function updateCustomerProfileAction(
   if (!membershipOutletId) return { error: "Missing outlet context." };
   if (!canManageOutletForBranchAdmin(ctx, membershipOutletId)) return { error: "Forbidden." };
 
+  if (emailRaw.length > 0) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw)) {
+      return { error: "Enter a valid email address or leave it blank." };
+    }
+  }
+
+  const vitalsParsed = parseProfileVitalsFromFormData(formData);
+  if (!vitalsParsed.ok) {
+    return { error: vitalsParsed.error };
+  }
+
+  const service = createServiceRoleSupabaseClient();
+
+  let phoneE164: string | null = null;
+  if (phone.length > 0) {
+    const phoneNorm = normalizeToE164(phone);
+    if (!phoneNorm.ok) {
+      return { error: phoneNorm.message };
+    }
+    phoneE164 = phoneNorm.e164;
+  }
+
+  try {
+    const conflict = await contactTakenByOtherProfile(service, {
+      profileId,
+      phoneRaw: phoneE164 ?? undefined,
+      emailRaw: emailRaw.length > 0 ? emailRaw : undefined,
+    });
+    const conflictMsg = formatContactConflictError(conflict);
+    if (conflictMsg) {
+      return { error: conflictMsg };
+    }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Could not validate contact details." };
+  }
+
   const supabase = await createServerSupabaseClient();
 
-  const { error } = await supabase
+  const emailForDb = emailRaw.length > 0 ? emailRaw : null;
+
+  if (emailForDb) {
+    const { error: authErr } = await service.auth.admin.updateUserById(profileId, {
+      email: emailForDb,
+      email_confirm: true,
+    });
+    if (authErr) return { error: authErr.message };
+  }
+
+  if (phoneE164) {
+    const { error: authPhoneErr } = await service.auth.admin.updateUserById(profileId, {
+      phone: phoneE164,
+      phone_confirm: true,
+    });
+    if (authPhoneErr) return { error: authPhoneErr.message };
+  }
+
+  // Service role after outlet guard — RLS `branch_front_updates_customer_profiles` only matches
+  // directly assigned outlets (`i_can_see_member`), so gym owners on other branches would get
+  // a silent zero-row update via the user-scoped client. Mirrors `dashboard/staff/actions.ts`.
+  const { data: updated, error } = await service
     .from("profiles")
     .update({
       full_name: full_name.length ? full_name : null,
-      phone: phone.length ? phone : null,
+      phone: phoneE164,
+      email: emailForDb,
+      ...vitalsParsed.patch,
+      ...auditActorOnUpdate(ctx.user.id),
     })
-    .eq("id", profileId);
+    .eq("id", profileId)
+    .select("id")
+    .maybeSingle();
 
   if (error) return { error: error.message };
+  if (!updated?.id) {
+    return { error: "Could not save member details. Confirm this member belongs to your branch." };
+  }
 
   revalidatePath(ROUTES.adminCustomers);
   revalidatePath(ROUTES.dashboardCustomers);
   if (membershipRecordId.length) {
     revalidatePath(dashboardCustomerMembershipPath(membershipRecordId));
+    revalidatePath(superadminCustomerMembershipPath(membershipRecordId));
   }
+  revalidatePath(ROUTES.superadminCustomers);
   revalidatePath(ROUTES.dashboard);
   return { success: "Customer profile updated." };
 }

@@ -8,6 +8,7 @@ import {
   uploadGymBrandLogoForOrganization,
 } from "@/lib/supabase/gym-brand-logos-storage";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/admin";
+import { auditActorOnUpdate } from "@/lib/supabase/audit-columns";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getAuthDashboardContext } from "@/services/auth.service";
 import { ROLES } from "@/types/roles";
@@ -345,10 +346,14 @@ export async function reassignGymOwnerAction(
       .update({
         full_name: ownerFullName || ownerEmail,
         email: ownerEmail,
+        ...auditActorOnUpdate(ctx.user.id),
       })
       .eq("id", profileId);
   } else if (ownerFullName) {
-    await admin.from("profiles").update({ full_name: ownerFullName }).eq("id", profileId);
+    await admin
+      .from("profiles")
+      .update({ full_name: ownerFullName, ...auditActorOnUpdate(ctx.user.id) })
+      .eq("id", profileId);
   }
 
   const now = new Date().toISOString();

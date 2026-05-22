@@ -6,11 +6,10 @@ export default function SuperadminOnboardPage() {
       <div>
         <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Onboard a new gym</h2>
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-          Creates an organization, the first gym branch (<code className="text-xs">outlets</code> row) with required
-          address details, and a gym admin login. Successful onboarding sends you back to{" "}
-          <span className="font-medium text-zinc-900 dark:text-zinc-50">All gyms</span> with a success toast (
-          <code className="text-xs">?toast=gym-created</code>) and refreshed list (page&nbsp;1). The admin user is
-          provisioned with the Supabase Admin API on the server — the service role key never touches the browser.
+          Add a new gym brand, its first location with full address details, and an admin who can sign in and run
+          day-to-day operations. When you finish, you&apos;ll return to{" "}
+          <span className="font-medium text-zinc-900 dark:text-zinc-50">All gyms</span> with the updated list and a
+          confirmation that the gym was created.
         </p>
       </div>
       <OnboardGymForm />

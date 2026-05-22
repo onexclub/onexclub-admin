@@ -1,11 +1,11 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import { MembershipProfileTabs } from "@/components/dashboard/MembershipProfileTabs";
-import { CustomerMembershipOnboardingSummaryTab } from "@/features/onboarding/components/CustomerMembershipOnboardingSummaryTab";
-import type { OnboardingViewerContext } from "@/features/onboarding/types";
-import { CustomerMembershipDetail } from "@/components/dashboard/CustomerMembershipDetail";
+import { CustomerProfileHeader } from "@/components/dashboard/CustomerProfileHeader";
+import { CustomerMembershipWorkspace } from "@/components/dashboard/CustomerMembershipWorkspace";
 import { RoleGuard } from "@/components/auth/RoleGuard";
 import { EmptyState } from "@/components/ui/EmptyState";
+import type { OnboardingViewerContext } from "@/features/onboarding/types";
 import { todayUtcIsoDate } from "@/lib/date-term";
 import { fetchMembershipPlansForOutlets, type MembershipPlanAdminRow } from "@/lib/admin/membership-plans-admin";
 import type { DashboardFeature } from "@/lib/auth/roles";
@@ -14,10 +14,13 @@ import {
   canAssignDedicatedTrainer,
   canAssignMembershipPlan,
 } from "@/lib/auth/roles";
+import { listTrainersForOutlets } from "@/lib/admin/outlet-trainers";
+import type { CustomerMembershipDetailMembership } from "@/lib/customers/membership-detail";
+import { GYM_MEMBERSHIP_AUDIT_EMBEDS, mapGymMembershipAuditFromRow } from "@/lib/customers/membership-audit";
+import { PROFILE_CONTACT_AND_VITALS_SELECT } from "@/lib/profile/vitals";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { effectiveManagedOutletIds, getAuthDashboardContext } from "@/services/auth.service";
-import { ROUTES } from "@/utils/routes";
-import type { CustomerMembershipDetailMembership } from "@/components/dashboard/CustomerMembershipDetail";
+import { ROUTES, dashboardCustomerMembershipPath } from "@/utils/routes";
 
 const FEATURE: DashboardFeature = "customers";
 
@@ -49,11 +52,27 @@ export default async function DashboardCustomerMembershipPage({
     );
   }
 
+  const membershipSelect = [
+    "id",
+    "status",
+    "outlet_id",
+    "profile_id",
+    "assigned_trainer_id",
+    "joined_at",
+    "plan_id",
+    "start_date",
+    "end_date",
+    "amount_paid",
+    "currency",
+    GYM_MEMBERSHIP_AUDIT_EMBEDS,
+    `profile:profiles!profile_id(${PROFILE_CONTACT_AND_VITALS_SELECT})`,
+    "outlet:outlets(name,city)",
+    "membership_plans(id,name)",
+  ].join(",");
+
   let q = supabase
     .from("gym_memberships")
-    .select(
-      "id,status,outlet_id,profile_id,assigned_trainer_id,onboarded_by,joined_at,plan_id,start_date,end_date,amount_paid,currency,profile:profiles!profile_id(full_name,email,phone),outlet:outlets(name,city),membership_plans(id,name)",
-    )
+    .select(membershipSelect)
     .eq("id", membershipId)
     .is("deleted_at", null);
 
@@ -61,11 +80,30 @@ export default async function DashboardCustomerMembershipPage({
     q = q.eq("assigned_trainer_id", ctx.user.id);
   }
 
-  const { data: raw, error } = await q.maybeSingle();
+  const { data, error } = await q.maybeSingle();
 
   if (error) {
     return <EmptyState title="Could not load this member" description={error.message} />;
   }
+
+  type RawMembershipRow = {
+    id: string;
+    status: string;
+    outlet_id: string;
+    profile_id: string;
+    assigned_trainer_id?: string | null;
+    joined_at: string | null;
+    start_date: string | null;
+    end_date: string | null;
+    amount_paid: number | null;
+    currency: string | null;
+    profile: unknown;
+    outlet: unknown;
+    membership_plans: unknown;
+  };
+
+  const raw = data as RawMembershipRow | null;
+
   if (!raw?.outlet_id || !outletIds.includes(raw.outlet_id)) {
     notFound();
   }
@@ -84,6 +122,7 @@ export default async function DashboardCustomerMembershipPage({
     profile: firstOrSelf(raw.profile as never),
     outlet: firstOrSelf(raw.outlet as never),
     plan: firstOrSelf(raw.membership_plans as never),
+    audit: mapGymMembershipAuditFromRow(raw as Parameters<typeof mapGymMembershipAuditFromRow>[0]),
   };
 
   const { rows: planRows } = await fetchMembershipPlansForOutlets({
@@ -106,11 +145,13 @@ export default async function DashboardCustomerMembershipPage({
     isCustomerActor: ctx.appRole === ROLES.CUSTOMER,
   };
 
+  const basePath = dashboardCustomerMembershipPath(membershipId);
+
   return (
     <RoleGuard role={ctx.appRole} feature={FEATURE}>
       <div className="space-y-6">
         <nav className="text-sm text-zinc-600 dark:text-zinc-400">
-          <Link href={ROUTES.dashboardCustomers} className="hover:text-orange-600 dark:hover:text-orange-400">
+          <Link href={ROUTES.dashboardCustomers} className="hover:text-brand">
             Customers
           </Link>
           <span aria-hidden className="px-2 text-zinc-400">
@@ -119,50 +160,30 @@ export default async function DashboardCustomerMembershipPage({
           <span className="text-zinc-900 dark:text-zinc-100">{membership.profile?.full_name ?? "Member"}</span>
         </nav>
 
-        <MembershipProfileTabs
-          overviewSlot={
-            <CustomerMembershipDetail
-              membership={membership}
-              catalogue={catalogue}
-              defaultStartDate={todayUtcIsoDate()}
-              ctxRole={ctx.appRole}
-              trainers={trainers}
-              canAssignPlan={canAssignMembershipPlan(ctx.appRole)}
-              canAssignTrainer={canAssignDedicatedTrainer(ctx.appRole)}
-            />
-          }
-          onboardingSlot={<CustomerMembershipOnboardingSummaryTab viewer={viewer} outletId={membership.outlet_id} />}
+        <CustomerProfileHeader
+          fullName={membership.profile?.full_name ?? null}
+          phone={membership.profile?.phone ?? null}
+          email={membership.profile?.email ?? null}
+          outletLabel={[membership.outlet?.name, membership.outlet?.city].filter(Boolean).join(" · ")}
+          status={membership.status}
+          endDate={membership.end_date}
+          joinedAt={membership.joined_at}
         />
+
+        <Suspense fallback={<p className="text-sm text-zinc-500">Loading profile…</p>}>
+          <CustomerMembershipWorkspace
+            membership={membership}
+            catalogue={catalogue}
+            defaultStartDate={todayUtcIsoDate()}
+            ctxRole={ctx.appRole}
+            trainers={trainers}
+            canAssignPlan={canAssignMembershipPlan(ctx.appRole)}
+            canAssignTrainer={canAssignDedicatedTrainer(ctx.appRole)}
+            viewer={viewer}
+            basePath={basePath}
+          />
+        </Suspense>
       </div>
     </RoleGuard>
   );
-}
-
-async function listTrainersForOutlets(
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
-  outletIds: string[],
-) {
-  if (!outletIds.length) return [];
-
-  const { data } = await supabase
-    .from("staff_assignments")
-    .select("profile_id, profiles!staff_assignments_profile_id_fkey(full_name,email)")
-    .in("outlet_id", outletIds)
-    .eq("role", ROLES.TRAINER)
-    .is("revoked_at", null);
-
-  type Row = { profile_id: string; profiles: { full_name: string | null; email: string | null } | null | unknown[] };
-  const normalized = ((data ?? []) as Row[]).map((row) => {
-    const nestedUnknown = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
-    const nested = nestedUnknown as { full_name?: string | null; email?: string | null } | null | undefined;
-    return {
-      id: row.profile_id,
-      full_name: nested?.full_name ?? null,
-      email: nested?.email ?? null,
-    };
-  });
-
-  const dedup = new Map<string, { id: string; full_name: string | null; email: string | null }>();
-  for (const row of normalized) dedup.set(row.id, row);
-  return [...dedup.values()];
 }

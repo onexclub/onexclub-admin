@@ -13,6 +13,17 @@ export const onboardingQueries = {
   responses: (profileId: string, outletId: string) => ["onboarding", "responses", profileId, outletId] as const,
 };
 
+export function useOnboardingDefinitions(outletId: string | null) {
+  const supabase = useSupabaseBrowser();
+  const enabled = Boolean(outletId);
+
+  return useQuery({
+    queryKey: onboardingQueries.definitions(outletId ?? ""),
+    enabled,
+    queryFn: async () => fetchMergedDefinitionsForOutlet(supabase, outletId ?? ""),
+  });
+}
+
 export function useOnboardingFormsBundle(profileId: string, outletId: string | null) {
   const supabase = useSupabaseBrowser();
   const enabled = !!outletId;

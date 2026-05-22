@@ -34,12 +34,12 @@ export default async function HomePage() {
           <BrandLogo variant="wordmark" priority className="!h-[4.5rem] !w-[min(100%,18rem)] sm:!h-[5.25rem] sm:!w-[22rem]" />
           <div className="space-y-4">
             <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-              Multi-tenant gym operations,{" "}
-              <span className="text-gradient-brand">built for scale</span>
+              Everything your gym needs,{" "}
+              <span className="text-gradient-brand">in one place</span>
             </h1>
             <p className="text-sm leading-relaxed text-zinc-300">
-              This Next.js console pairs with Supabase using strict Row Level Security. Sign in with a platform superadmin,
-              gym admin, or staff account that already exists in Supabase Auth.
+              Manage members, staff, and daily operations from a single secure console. Sign in with the
+              account your gym or platform team set up for you.
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
@@ -49,14 +49,6 @@ export default async function HomePage() {
             >
               Sign in
             </Link>
-            <a
-              className="inline-flex h-11 items-center justify-center rounded-lg border border-white/20 bg-white/5 px-8 text-sm font-semibold text-white backdrop-blur transition hover:border-orange-400/50 hover:bg-white/10"
-              href="https://supabase.com/docs/guides/auth/server-side/nextjs"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Supabase + Next.js guide
-            </a>
           </div>
         </div>
         <div className="relative mx-auto flex w-full max-w-sm flex-1 justify-center lg:mx-0 lg:max-w-md">

@@ -2,9 +2,13 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { StatCard } from "@/components/ui/StatCard";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { PlatformGymsTree } from "@/components/superadmin/PlatformGymsTree";
+import { PlatformDashboardCharts } from "@/components/superadmin/PlatformDashboardCharts";
 import { ROUTES } from "@/utils/routes";
-import { loadPlatformOrgsAndBranches } from "@/lib/superadmin/platform-gyms-data";
+import {
+  branchesForOrg,
+  buildPlatformDashboardChartModel,
+  loadPlatformOrgsAndBranches,
+} from "@/lib/superadmin/platform-gyms-data";
 
 export default async function SuperadminHomePage() {
   const supabase = await createServerSupabaseClient();
@@ -21,35 +25,52 @@ export default async function SuperadminHomePage() {
   ]);
 
   const { orgs, branches, memberCountByOutletId } = tree;
+  const chartModel = buildPlatformDashboardChartModel(orgs, branches, memberCountByOutletId);
+
+  const orgsWithNoBranches = orgs.filter((o) => branchesForOrg(o.id, branches).length === 0).length;
+  const avgMembersPerBranch = branchCount ? (memberCount ?? 0) / branchCount : 0;
+  const activeOrgs = orgs.filter((o) => o.is_active).length;
 
   return (
     <div className="space-y-8">
-      <div>
+      <div className="dashboard-rise">
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Platform dashboard</h2>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Onboarded gym brands (organizations) and their branches. Branches are stored as{" "}
-          <code className="rounded bg-zinc-100 px-1 text-xs dark:bg-zinc-800">outlets</code> in the database.
+          Live view of gym brands, branches (<code className="rounded bg-zinc-100 px-1 text-xs dark:bg-zinc-800">outlets</code>
+          ), and active memberships — with trends and distribution charts below.
         </p>
       </div>
 
       <section className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Organizations" value={orgCount ?? 0} hint="Gym brands / tenants" />
-        <StatCard label="Branches" value={branchCount ?? 0} hint="Locations (outlets)" />
-        <StatCard label="Active memberships" value={memberCount ?? 0} hint="Across all branches" />
+        <div className="dashboard-rise">
+          <StatCard label="Organizations" value={orgCount ?? 0} hint="Gym brands / tenants" />
+        </div>
+        <div className="dashboard-rise dashboard-rise-delay-1">
+          <StatCard label="Branches" value={branchCount ?? 0} hint="Locations (outlets)" />
+        </div>
+        <div className="dashboard-rise dashboard-rise-delay-2">
+          <StatCard label="Active memberships" value={memberCount ?? 0} hint="Across all branches" />
+        </div>
       </section>
 
-      <section className="flex flex-wrap gap-3">
+      <section className="dashboard-rise dashboard-rise-delay-3 flex flex-wrap gap-3">
         <Link
           href={ROUTES.superadminOnboard}
-          className="inline-flex rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700"
+          className="inline-flex rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-700 hover:shadow-md hover:shadow-orange-900/30"
         >
           + Onboard new gym
         </Link>
         <Link
           href={ROUTES.superadminGyms}
-          className="inline-flex rounded-lg border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-800"
+          className="inline-flex rounded-lg border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-800"
         >
           + Add branch to org
+        </Link>
+        <Link
+          href={ROUTES.superadminCustomers}
+          className="inline-flex rounded-lg border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-100 dark:hover:bg-zinc-800"
+        >
+          All customers
         </Link>
         <p className="w-full text-xs text-zinc-500 dark:text-zinc-400">
           Onboarding creates an organization and its first branch. To add more branches, open{" "}
@@ -60,25 +81,29 @@ export default async function SuperadminHomePage() {
         </p>
       </section>
 
-      <section className="space-y-3">
-        <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Directory</h3>
-        {!orgs.length ? (
-          <EmptyState
-            title="No gyms yet"
-            description="Create your first organization and branch, then attach a gym admin."
-            action={
-              <Link
-                href={ROUTES.superadminOnboard}
-                className="inline-flex rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700"
-              >
-                Onboard new gym
-              </Link>
-            }
-          />
-        ) : (
-          <PlatformGymsTree orgs={orgs} branches={branches} memberCountByOutletId={memberCountByOutletId} />
-        )}
-      </section>
+      {!orgs.length ? (
+        <EmptyState
+          title="No gyms yet"
+          description="Create your first organization and branch, then attach a gym admin."
+          action={
+            <Link
+              href={ROUTES.superadminOnboard}
+              className="inline-flex rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700"
+            >
+              Onboard new gym
+            </Link>
+          }
+        />
+      ) : (
+        <PlatformDashboardCharts
+          {...chartModel}
+          report={{
+            orgsWithNoBranches,
+            avgMembersPerBranch,
+            activeOrgs,
+          }}
+        />
+      )}
     </div>
   );
 }

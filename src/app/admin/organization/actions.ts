@@ -11,9 +11,11 @@ import {
   mergeOutletClosures,
   normalizeTimeToHHmm,
   parseHolidayLines,
+  validateWeeklySchedule,
   WEEKDAY_KEYS,
   type DayHours,
   type OutletClosureEntry,
+  type ScheduleFormPayload,
   type WeekdayKey,
 } from "@/lib/outlets/schedule";
 import {
@@ -226,25 +228,51 @@ export async function updateOutletBranchProfileAction(
   return { success: "Branch profile saved." };
 }
 
-/** Weekly hours → `outlet_hours`; dated lines → `outlet_hour_exceptions` (see migration `019_outlet_hours_tables.sql`). */
-export async function updateOutletScheduleAction(
-  _prev: GymSettingsActionState,
+type ParsedOutletSchedule = {
+  weekly: Partial<Record<WeekdayKey, DayHours>>;
+  closures: OutletClosureEntry[];
+};
+
+function timeOrderOk(open: string, close: string): boolean {
+  return open < close;
+}
+
+/**
+ * Parses schedule from `schedule_json` (preferred) or legacy per-day FormData fields.
+ * **Reuse:** `updateOutletScheduleAction` only.
+ */
+function parseScheduleFromFormData(
   formData: FormData,
-): Promise<GymSettingsActionState> {
-  const ctx = await getAuthDashboardContext();
-  if (!ctx.user || !canWrite(ctx.appRole, "branches")) {
-    return { error: "You cannot edit operating hours." };
+): { ok: true; data: ParsedOutletSchedule } | { ok: false; error: string } {
+  const jsonRaw = String(formData.get("schedule_json") ?? "").trim();
+  if (jsonRaw) {
+    try {
+      const payload = JSON.parse(jsonRaw) as ScheduleFormPayload;
+      const validated = validateWeeklySchedule(payload.weekly ?? {});
+      if (!validated.ok) return { ok: false, error: validated.error };
+
+      const datedClosures = parseHolidayLines(String(payload.holidays_lines ?? ""));
+      const preserved = Array.isArray(payload.preserved_weekday_closures)
+        ? payload.preserved_weekday_closures.filter((row): row is OutletClosureEntry => {
+            if (!row || typeof row !== "object" || !("weekday" in row)) return false;
+            const w = (row as { weekday?: string }).weekday;
+            return Boolean(w && WEEKDAY_KEYS.includes(w as WeekdayKey));
+          })
+        : [];
+
+      return {
+        ok: true,
+        data: { weekly: validated.weekly, closures: mergeOutletClosures(datedClosures, preserved) },
+      };
+    } catch {
+      return { ok: false, error: "Invalid schedule data — refresh and try again." };
+    }
   }
 
-  const outletId = String(formData.get("outlet_id") ?? "").trim();
-
-  if (!outletId) return { error: "Branch id is required." };
-  if (!outletAllowed(ctx, outletId)) return { error: "That branch is outside your scope." };
-
-  function timeOrderOk(open: string, close: string): boolean {
-    return open < close;
-  }
-
+  return parseOutletScheduleFromFormData(formData);
+}
+/** Legacy parser — individual `${day}_open` fields (kept for backwards compatibility). */
+function parseOutletScheduleFromFormData(formData: FormData): { ok: true; data: ParsedOutletSchedule } | { ok: false; error: string } {
   const weekly: Partial<Record<WeekdayKey, DayHours>> = {};
   for (const day of WEEKDAY_KEYS) {
     const closed = formData.get(`${day}_closed`) === "on";
@@ -255,7 +283,7 @@ export async function updateOutletScheduleAction(
     const close2 = normalizeTimeToHHmm(String(formData.get(`${day}_close2`) ?? ""));
 
     if (closed && is24) {
-      return { error: `${day}: choose either closed or 24 hours, not both.` };
+      return { ok: false, error: `${day}: choose either closed or 24 hours, not both.` };
     }
     if (closed) {
       weekly[day] = { closed: true };
@@ -267,29 +295,29 @@ export async function updateOutletScheduleAction(
     }
 
     if (open && !isValidTimeHHmm(open)) {
-      return { error: `${day}: open time must be valid (24-hour).` };
+      return { ok: false, error: `${day}: open time must be valid (24-hour).` };
     }
     if (close && !isValidTimeHHmm(close)) {
-      return { error: `${day}: close time must be valid (24-hour).` };
+      return { ok: false, error: `${day}: close time must be valid (24-hour).` };
     }
     if (open2 && !isValidTimeHHmm(open2)) {
-      return { error: `${day}: evening open time must be valid (24-hour).` };
+      return { ok: false, error: `${day}: evening open time must be valid (24-hour).` };
     }
     if (close2 && !isValidTimeHHmm(close2)) {
-      return { error: `${day}: evening close time must be valid (24-hour).` };
+      return { ok: false, error: `${day}: evening close time must be valid (24-hour).` };
     }
 
     if (open && close) {
       if (!timeOrderOk(open, close)) {
-        return { error: `${day}: close time must be after open time (same-day schedule).` };
+        return { ok: false, error: `${day}: close time must be after open time (same-day schedule).` };
       }
       const d: DayHours = { open, close };
       if (open2 || close2) {
         if (!open2 || !close2) {
-          return { error: `${day}: evening shift needs both open and close.` };
+          return { ok: false, error: `${day}: evening shift needs both open and close.` };
         }
         if (!timeOrderOk(open2, close2)) {
-          return { error: `${day}: evening close must be after evening open.` };
+          return { ok: false, error: `${day}: evening close must be after evening open.` };
         }
         d.shift2_open = open2;
         d.shift2_close = close2;
@@ -299,7 +327,7 @@ export async function updateOutletScheduleAction(
     }
 
     if (open2 || close2) {
-      return { error: `${day}: set morning hours before adding an evening shift.` };
+      return { ok: false, error: `${day}: set morning hours before adding an evening shift.` };
     }
   }
 
@@ -320,29 +348,95 @@ export async function updateOutletScheduleAction(
       preservedWeekday = [];
     }
   }
-  const closures = mergeOutletClosures(datedClosures, preservedWeekday);
 
-  const supabase = await createServerSupabaseClient();
+  return { ok: true, data: { weekly, closures: mergeOutletClosures(datedClosures, preservedWeekday) } };
+}
 
-  const { error: delHoursErr } = await supabase.from("outlet_hours").delete().eq("outlet_id", outletId);
-  if (delHoursErr) return { error: delHoursErr.message };
+/** Writes weekly rows + dated exceptions for one outlet (replaces existing schedule). */
+async function persistOutletSchedule(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  outletId: string,
+  schedule: ParsedOutletSchedule,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { weekly, closures } = schedule;
 
   const hourRows = weeklyScheduleToOutletHourRows(outletId, weekly);
-  if (hourRows.length) {
-    const { error: insHoursErr } = await supabase.from("outlet_hours").insert(hourRows);
-    if (insHoursErr) return { error: insHoursErr.message };
+  if (!hourRows.length) {
+    return { ok: false, error: "Set at least one open day with hours before saving." };
   }
 
+  const { error: delHoursErr } = await supabase.from("outlet_hours").delete().eq("outlet_id", outletId);
+  if (delHoursErr) return { ok: false, error: delHoursErr.message };
+
+  const { error: insHoursErr } = await supabase.from("outlet_hours").insert(hourRows);
+  if (insHoursErr) return { ok: false, error: insHoursErr.message };
+
   const { error: delExcErr } = await supabase.from("outlet_hour_exceptions").delete().eq("outlet_id", outletId);
-  if (delExcErr) return { error: delExcErr.message };
+  if (delExcErr) return { ok: false, error: delExcErr.message };
 
   const datedOnly = closures.filter((c): c is OutletClosureEntry & { date: string } => Boolean(c.date));
   const excRows = closureEntriesToExceptionRows(outletId, datedOnly);
   if (excRows.length) {
     const { error: insExcErr } = await supabase.from("outlet_hour_exceptions").insert(excRows);
-    if (insExcErr) return { error: insExcErr.message };
+    if (insExcErr) return { ok: false, error: insExcErr.message };
+  }
+
+  return { ok: true };
+}
+
+/** Weekly hours → `outlet_hours`; dated lines → `outlet_hour_exceptions` (see migration `019_outlet_hours_tables.sql`). */
+export async function updateOutletScheduleAction(
+  _prev: GymSettingsActionState,
+  formData: FormData,
+): Promise<GymSettingsActionState> {
+  const ctx = await getAuthDashboardContext();
+  if (!ctx.user || !canWrite(ctx.appRole, "branches")) {
+    return { error: "You cannot edit operating hours." };
+  }
+
+  const outletId = String(formData.get("outlet_id") ?? "").trim();
+
+  if (!outletId) return { error: "Branch id is required." };
+  if (!outletAllowed(ctx, outletId)) return { error: "That branch is outside your scope." };
+
+  const parsed = parseScheduleFromFormData(formData);
+  if (!parsed.ok) return { error: parsed.error };
+
+  const applyToAll = String(formData.get("apply_to_all_branches") ?? "") === "on";
+  let targetOutletIds = [outletId];
+  if (applyToAll) {
+    const raw = String(formData.get("all_outlet_ids") ?? "").trim();
+    try {
+      const ids = JSON.parse(raw) as unknown;
+      if (!Array.isArray(ids)) return { error: "Invalid branch list." };
+      targetOutletIds = ids.filter((id): id is string => typeof id === "string" && id.trim().length > 0);
+    } catch {
+      return { error: "Invalid branch list." };
+    }
+    if (!targetOutletIds.length) return { error: "No branches selected." };
+    for (const id of targetOutletIds) {
+      if (!outletAllowed(ctx, id)) return { error: "One or more branches are outside your scope." };
+    }
+  }
+
+  const supabase = await createServerSupabaseClient();
+  for (const id of targetOutletIds) {
+    const saved = await persistOutletSchedule(supabase, id, parsed.data);
+    if (!saved.ok) return { error: saved.error };
   }
 
   revalidateGymSettingsPaths();
+  if (applyToAll && targetOutletIds.length > 1) {
+    return { success: `Hours and holidays saved for ${targetOutletIds.length} branches.` };
+  }
   return { success: "Hours and holiday exceptions saved." };
+}
+
+/** @deprecated Use `updateOutletScheduleAction` with `apply_to_all_branches` instead. */
+export async function updateAllOutletsScheduleAction(
+  prev: GymSettingsActionState,
+  formData: FormData,
+): Promise<GymSettingsActionState> {
+  formData.set("apply_to_all_branches", "on");
+  return updateOutletScheduleAction(prev, formData);
 }

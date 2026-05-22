@@ -78,3 +78,65 @@ export function branchesForOrg(orgId: string, branches: PlatformBranchRow[]): Pl
 export function formatPlanTierLabel(planTier: string): string {
   return planTier.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+/** One row per organization for bar charts (name truncated in UI if needed). */
+export type PlatformOrgMetricRow = {
+  name: string;
+  members: number;
+  branches: number;
+};
+
+export type PlatformPlanTierSlice = {
+  tier: string;
+  count: number;
+};
+
+export type PlatformTopBranchRow = {
+  name: string;
+  members: number;
+  orgName: string;
+};
+
+/**
+ * Serializable chart/report model for the platform dashboard (`PlatformDashboardCharts`).
+ *
+ * Reuse: call from any Server Component that already loaded orgs/branches/member counts
+ * (same inputs as `PlatformGymsTree`) to avoid duplicating aggregation logic.
+ */
+export function buildPlatformDashboardChartModel(
+  orgs: PlatformOrgRow[],
+  branches: PlatformBranchRow[],
+  memberCountByOutletId: Map<string, number>,
+): {
+  orgMetrics: PlatformOrgMetricRow[];
+  planTiers: PlatformPlanTierSlice[];
+  topBranches: PlatformTopBranchRow[];
+} {
+  const orgMetrics: PlatformOrgMetricRow[] = orgs.map((org) => {
+    const orgBranches = branchesForOrg(org.id, branches);
+    const members = orgBranches.reduce((sum, b) => sum + (memberCountByOutletId.get(b.id) ?? 0), 0);
+    return { name: org.name, members, branches: orgBranches.length };
+  });
+
+  const tierAcc = new Map<string, number>();
+  for (const org of orgs) {
+    const label = formatPlanTierLabel(org.plan_tier);
+    tierAcc.set(label, (tierAcc.get(label) ?? 0) + 1);
+  }
+  const planTiers: PlatformPlanTierSlice[] = Array.from(tierAcc.entries()).map(([tier, count]) => ({
+    tier,
+    count,
+  }));
+
+  const orgNameById = new Map(orgs.map((o) => [o.id, o.name] as const));
+  const topBranches: PlatformTopBranchRow[] = branches
+    .map((b) => ({
+      name: b.name,
+      members: memberCountByOutletId.get(b.id) ?? 0,
+      orgName: orgNameById.get(b.organization_id) ?? "—",
+    }))
+    .sort((a, b) => b.members - a.members)
+    .slice(0, 12);
+
+  return { orgMetrics, planTiers, topBranches };
+}

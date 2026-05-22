@@ -32,6 +32,9 @@ function badgeActive(isActive: boolean) {
  * Platform dashboard: organizations → gym branches (DB: `outlets`).
  * Data from `loadPlatformOrgsAndBranches` in `@/lib/superadmin/platform-gyms-data`.
  * Logos reuse `GymLogoThumbnail` (same as `/superadmin/gyms`).
+ *
+ * Reuse note: the main `/superadmin` home uses charts (`PlatformDashboardCharts`) instead of this tree.
+ * Keep this component for a compact org → branch directory elsewhere (drawer, modal, or gym detail sidebar).
  */
 export function PlatformGymsTree({ orgs, branches, memberCountByOutletId }: Props) {
   if (!orgs.length) {

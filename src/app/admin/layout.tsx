@@ -11,8 +11,6 @@ import { ROUTES } from "@/utils/routes";
 const FULL_ADMIN_NAV = [
   { href: ROUTES.admin, label: "Dashboard" },
   { href: ROUTES.adminCustomers, label: "Customers" },
-  /** Prefer dashboard route: `/admin/customers` canonicalizes here and the wizard needs stable `/dashboard/**` paths. */
-  { href: ROUTES.dashboardCustomerOnboard, label: "Add customer" },
   { href: `${ROUTES.admin}/staff`, label: "Manage staff" },
   { href: `${ROUTES.admin}/attendance`, label: "Attendance (placeholder)" },
   { href: `${ROUTES.admin}/payments`, label: "Payments (placeholder)" },

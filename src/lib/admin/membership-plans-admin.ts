@@ -8,7 +8,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * - `src/app/admin/members/onboard/page.tsx` — hydrate plan choices per outlet when creating members
  * - `src/app/admin/customers/page.tsx` (+ assign form) — renew / attach plan after offline payment
  *
- * The Supabase DDL lives in `supabase/migrations/004_membership_plans.sql`; keep API shapes aligned with that migration.
+ * The Supabase DDL lives in `supabase/migrations/004_membership_plans.sql` (+ audit cols in `022_audit_tracking.sql`).
+ * `created_by` / `updated_by` are set by DB triggers on the user client, or via `auditActorOnInsert` in plan actions.
  * Customer-facing perk bullets reuse `buildPlanBenefitLines()` in `@/lib/admin/plan-benefits.ts` — tweak there to refresh every surface at once.
  */
 
@@ -30,6 +31,8 @@ export type MembershipPlanAdminRow = {
   cross_branch_org_only: boolean;
   features_json: Record<string, unknown> | null;
   created_at: string;
+  created_by: string | null;
+  updated_by: string | null;
 };
 
 export async function fetchMembershipPlansForOutlets(args: {
@@ -62,6 +65,8 @@ export async function fetchMembershipPlansForOutlets(args: {
         "cross_branch_org_only",
         "features_json",
         "created_at",
+        "created_by",
+        "updated_by",
       ].join(","),
     )
     .in("outlet_id", outletIds)

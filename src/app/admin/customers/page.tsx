@@ -138,7 +138,7 @@ export default async function AdminCustomersPage() {
           <div className="flex shrink-0 flex-col gap-2 sm:items-end">
             {isAdminConsoleRole(ctx.appRole) ? (
               <Link
-                href={ROUTES.dashboardCustomerOnboard}
+                href={ROUTES.dashboardCustomerNew}
                 className="inline-flex h-11 items-center justify-center rounded-lg bg-orange-600 px-5 text-sm font-semibold text-white hover:bg-orange-700"
               >
                 Add customer
@@ -175,7 +175,7 @@ export default async function AdminCustomersPage() {
           action={
             isAdminConsoleRole(ctx.appRole) ? (
             <Link
-              href={ROUTES.dashboardCustomerOnboard}
+              href={ROUTES.dashboardCustomerNew}
               className="inline-flex h-10 items-center justify-center rounded-lg bg-orange-600 px-4 text-sm font-semibold text-white hover:bg-orange-700"
             >
               Add first customer

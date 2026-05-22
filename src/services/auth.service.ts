@@ -128,7 +128,10 @@ export async function getAuthDashboardContext(): Promise<AuthDashboardContext> {
 
 /**
  * True when `outletId` is within `ctx.managedOutletIds` (any staff: assigned outlets; gym owners: all org branches).
+ *
+ * **Superadmin:** platform operators usually have no `staff_assignments`, but RLS grants full row access — mirror that here so `/superadmin/customers` can reuse gym dashboard server actions (`admin/customers/actions.ts`).
  */
 export function canManageOutletForBranchAdmin(ctx: AuthDashboardContext, outletId: string): boolean {
+  if (ctx.appRole === ROLES.SUPERADMIN) return true;
   return effectiveManagedOutletIds(ctx).includes(outletId);
 }

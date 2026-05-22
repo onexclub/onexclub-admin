@@ -2,6 +2,7 @@
  * Central RBAC configuration for the gym admin console (/dashboard/**).
  *
  * **Moderator guide:** `docs/dashboard-rbac.md` explains how to extend routes + permissions without duplicating logic.
+ * **Sign-in / OTP expectations per role:** `docs/auth-by-role.md` + `src/lib/auth/role-sign-in-policy.ts` (avoid drifting copy in forms).
  *
  * **Reuse:**
  * - Import `hasAccess`, `canWrite`, `ROLES` from here (or re-exports in `@/types/roles`).
@@ -244,16 +245,6 @@ export function dashboardSidebarItems(role: UserRole): SidebarNavPiece[] {
   pushIf("/dashboard", "Dashboard", "dashboard");
   pushIf("/dashboard/branches", "Branches & settings", "branches", true);
   pushIf("/dashboard/customers", "Customers", "customers");
-  /**
-   * Auth + `question_definitions` intake wizard — gym leadership only (`gym_owner`, `branch_admin`; see `ADMIN_CONSOLE_ROLES` in `src/types/roles.ts`).
-   * Href kept literal to avoid a `routes.ts` ↔ `roles.ts` import cycle.
-   */
-  if (
-    (role === ROLES.GYM_OWNER || role === ROLES.BRANCH_ADMIN) &&
-    hasAccess(role, "customers", "read")
-  ) {
-    items.push({ href: "/dashboard/customers/onboard", label: "Add customer" });
-  }
   pushIf("/dashboard/plans", "Membership Plans", "membership_catalog");
   pushIf("/dashboard/diet", "Diet Plans", "diet_plans");
   pushIf("/dashboard/exercise", "Exercise Plans", "exercise_plans");

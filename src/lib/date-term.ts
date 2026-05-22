@@ -31,3 +31,21 @@ export function todayUtcIsoDate(): string {
   const d = String(n.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
+
+const UTC_MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/**
+ * Calendar label for ISO / Postgres timestamps — **SSR-safe** (same string on Node + browser).
+ *
+ * Do not use `Date#toLocaleDateString()` without a fixed locale here: the server often defaults to `en-US`
+ * while the member’s browser may be `en-GB`, which triggers React hydration mismatches (e.g. 5/15/2026 vs 15/05/2026).
+ */
+export function formatMembershipTimestampUtcLabel(iso: string | null | undefined): string {
+  if (iso == null || !String(iso).trim()) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const day = d.getUTCDate();
+  const mon = UTC_MONTH_SHORT[d.getUTCMonth()];
+  const y = d.getUTCFullYear();
+  return `${day} ${mon} ${y}`;
+}

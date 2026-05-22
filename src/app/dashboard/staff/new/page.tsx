@@ -54,7 +54,8 @@ export default async function DashboardAddStaffPage() {
         <div className="space-y-2">
           <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Add team member</h1>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Create their login with a temporary password. They can update their password and photo after signing in.
+            Create their login with a temporary password. Assign one branch or several at once — adjust later from their
+            profile.
           </p>
         </div>
 

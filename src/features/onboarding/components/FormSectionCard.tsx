@@ -28,9 +28,12 @@ export function FormSectionCard(props: {
   bundledResponse?: QuestionsResponseRow | null;
   outletId: string | null;
   defaultOpen?: boolean;
+  /** `flat` — always expanded, no collapse chrome (customer profile edit tabs). */
+  variant?: "collapsible" | "flat";
 }) {
-  const { formName, title, description, definitions, viewer, bundledResponse, outletId, defaultOpen } = props;
-  const [open, setOpen] = useState(defaultOpen ?? false);
+  const { formName, title, description, definitions, viewer, bundledResponse, outletId, defaultOpen, variant = "collapsible" } = props;
+  const flat = variant === "flat";
+  const [open, setOpen] = useState(flat || (defaultOpen ?? false));
   const [serverError, setServerError] = useState<string | null>(null);
   const canView = canViewOnboardingSection(viewer.role, formName);
   const sectionEditable = canEditOnboardingSection(viewer.role, formName);
@@ -115,40 +118,102 @@ export function FormSectionCard(props: {
     }
   };
 
+  const formBody = (
+    <>
+      {serverError ? (
+        <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-100">
+          {serverError}
+        </p>
+      ) : null}
+      <FormProvider {...form}>
+        <div className="grid gap-6">
+          {definitions.map((definition) => {
+            const fieldDisabled =
+              sectionRoleLocked || (viewer.isCustomerActor && !definition.editable_by_customer);
+            return (
+              <DynamicQuestionRenderer key={definition.id} definition={definition} disabled={fieldDisabled} />
+            );
+          })}
+        </div>
+      </FormProvider>
+      {sectionRoleLocked ? (
+        <p className="text-sm text-zinc-600 dark:text-zinc-300">
+          This section is read-only for your role; ask a branch lead or coach for updates.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+          <Button type="button" variant="secondary" disabled={upsertMutation.isPending} onClick={handleSaveDraft}>
+            {upsertMutation.isPending ? "Saving…" : "Save draft"}
+          </Button>
+          <Button type="button" disabled={upsertMutation.isPending} onClick={handleFinalize}>
+            {upsertMutation.isPending ? "Submitting…" : "Submit final"}
+          </Button>
+        </div>
+      )}
+    </>
+  );
+
+  const headerBlock = (
+    <div className="space-y-2">
+      {!flat ? <CompletionBadge isComplete={bundledResponse?.is_complete ?? false} /> : null}
+      <div>
+        {!flat ? <p className="text-[10px] font-mono uppercase tracking-wide text-zinc-400">{formName}</p> : null}
+        <CardTitle className={flat ? "text-base" : undefined}>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </div>
+      <dl className="flex flex-wrap gap-3 text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+        <div className="flex flex-col gap-0.5">
+          <dt className="text-zinc-400">Completion</dt>
+          <dd className="text-sm font-semibold normal-case tracking-normal text-zinc-900 dark:text-zinc-100">
+            Required {completion.requiredAnswered}/{completion.requiredTotal}{" "}
+            <span className="font-normal text-zinc-600 dark:text-zinc-300">({completion.percentRequired}%)</span>
+          </dd>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <dt className="text-zinc-400">Optional prompts</dt>
+          <dd className="text-sm font-semibold normal-case tracking-normal text-zinc-900 dark:text-zinc-100">
+            {completion.optionalAnswered}/{completion.optionalTotal}
+          </dd>
+        </div>
+      </dl>
+      <div
+        className="h-1.5 w-full max-w-md overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"
+        role="progressbar"
+        aria-valuenow={completion.percentRequired}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`${title} required completion`}
+      >
+        <div
+          className="h-full rounded-full bg-orange-600 transition-all duration-300 dark:bg-orange-500"
+          style={{ width: `${completion.percentRequired}%` }}
+        />
+      </div>
+      {bundledResponse?.updated_at ? (
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          Last synced {new Date(bundledResponse.updated_at).toLocaleString()}
+        </p>
+      ) : (
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">No saved responses yet for this section.</p>
+      )}
+    </div>
+  );
+
+  if (flat) {
+    return (
+      <div className="space-y-5">
+        {headerBlock}
+        {formBody}
+      </div>
+    );
+  }
+
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <Card>
         <CardHeader className="space-y-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="space-y-2">
-              <CompletionBadge isComplete={bundledResponse?.is_complete ?? false} />
-              <div>
-                <CardTitle>{title}</CardTitle>
-                <CardDescription>{description}</CardDescription>
-              </div>
-              <dl className="flex flex-wrap gap-3 text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                <div className="flex flex-col gap-0.5">
-                  <dt className="text-zinc-400">Completion</dt>
-                  <dd className="text-sm font-semibold normal-case tracking-normal text-zinc-900 dark:text-zinc-100">
-                    Required {completion.requiredAnswered}/{completion.requiredTotal}{" "}
-                    <span className="font-normal text-zinc-600 dark:text-zinc-300">({completion.percentRequired}%)</span>
-                  </dd>
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  <dt className="text-zinc-400">Optional prompts</dt>
-                  <dd className="text-sm font-semibold normal-case tracking-normal text-zinc-900 dark:text-zinc-100">
-                    {completion.optionalAnswered}/{completion.optionalTotal}
-                  </dd>
-                </div>
-              </dl>
-              {bundledResponse?.updated_at ? (
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Last synced {new Date(bundledResponse.updated_at).toLocaleString()}
-                </p>
-              ) : (
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">No saved draft yet for this membership.</p>
-              )}
-            </div>
+            {headerBlock}
             <CollapsibleTrigger asChild>
               <button
                 type="button"
@@ -162,38 +227,7 @@ export function FormSectionCard(props: {
           </div>
         </CardHeader>
         <CollapsibleContent>
-          <CardContent className="space-y-5">
-            {serverError ? (
-              <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-100">
-                {serverError}
-              </p>
-            ) : null}
-            <FormProvider {...form}>
-              <div className="grid gap-6">
-                {definitions.map((definition) => {
-                  const fieldDisabled =
-                    sectionRoleLocked || (viewer.isCustomerActor && !definition.editable_by_customer);
-                  return (
-                    <DynamicQuestionRenderer key={definition.id} definition={definition} disabled={fieldDisabled} />
-                  );
-                })}
-              </div>
-            </FormProvider>
-            {sectionRoleLocked ? (
-              <p className="text-sm text-zinc-600 dark:text-zinc-300">
-                This section is read-only for your role; ask a branch lead or coach for updates.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                <Button type="button" variant="secondary" disabled={upsertMutation.isPending} onClick={handleSaveDraft}>
-                  {upsertMutation.isPending ? "Saving…" : "Save draft"}
-                </Button>
-                <Button type="button" disabled={upsertMutation.isPending} onClick={handleFinalize}>
-                  {upsertMutation.isPending ? "Submitting…" : "Submit final"}
-                </Button>
-              </div>
-            )}
-          </CardContent>
+          <CardContent className="space-y-5">{formBody}</CardContent>
         </CollapsibleContent>
       </Card>
     </Collapsible>

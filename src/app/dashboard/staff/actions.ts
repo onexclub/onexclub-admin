@@ -2,9 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { ASSIGNABLE_ROLES, canManageStaffAssignments, ROLES, type AssignableStaffRole } from "@/lib/auth/roles";
+import { normalizeToE164 } from "@/lib/auth/phone-e164";
+import { isStaffPhoneRequiredForProvisioning } from "@/lib/auth/role-sign-in-policy";
 import { uploadProfileAvatar } from "@/lib/supabase/profile-avatars-storage";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/admin";
+import { auditActorOnInsert, auditActorOnUpdate } from "@/lib/supabase/audit-columns";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { parseStaffBranchFormSelection, syncStaffProfileBranchAccess } from "@/lib/admin/staff-branch-assignments";
 import { canManageOutletForBranchAdmin, getAuthDashboardContext } from "@/services/auth.service";
 import { ROUTES, dashboardStaffAssignmentPath } from "@/utils/routes";
 
@@ -18,15 +22,17 @@ async function persistStaffProfileDisplay(
   profileId: string,
   email: string,
   fullName: string,
-  phone: string,
-  avatarUrl?: string,
+  phoneE164: string | undefined,
+  avatarUrl: string | undefined,
+  actorProfileId: string,
 ): Promise<void> {
   const displayName = fullName.trim() || email;
   const patch: Record<string, string> = {
     full_name: displayName,
     email,
+    ...auditActorOnUpdate(actorProfileId),
   };
-  if (phone.trim()) patch.phone = phone.trim();
+  if (phoneE164) patch.phone = phoneE164;
   if (avatarUrl) patch.avatar_url = avatarUrl;
 
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -36,7 +42,7 @@ async function persistStaffProfileDisplay(
   }
 
   await service.from("profiles").upsert(
-    { id: profileId, ...patch },
+    { id: profileId, ...patch, ...auditActorOnInsert(actorProfileId) },
     { onConflict: "id" },
   );
 }
@@ -76,19 +82,35 @@ export async function createStaffMemberAction(_prev: StaffActionState, formData:
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
   const fullName = String(formData.get("full_name") ?? "").trim();
-  const phone = String(formData.get("phone") ?? "").trim();
-  const outletId = String(formData.get("outlet_id") ?? "").trim();
+  const phoneRaw = String(formData.get("phone") ?? "").trim();
   const role = String(formData.get("role") ?? "").trim() as AssignableStaffRole;
-  const isPrimary = formData.get("is_primary") === "on";
+  const branchSelection = parseStaffBranchFormSelection(formData);
 
-  if (!email || !outletId) {
-    return { error: "Email and branch are required." };
+  let phoneE164: string | undefined;
+  if (phoneRaw.length > 0) {
+    const normalized = normalizeToE164(phoneRaw);
+    if (!normalized.ok) {
+      return { error: normalized.message };
+    }
+    phoneE164 = normalized.e164;
+  }
+  if (isStaffPhoneRequiredForProvisioning(role) && !phoneE164) {
+    return { error: "Phone is required for reception and trainer roles (Phone OTP)." };
+  }
+
+  if (!email) {
+    return { error: "Email is required." };
+  }
+  if (!branchSelection.ok) {
+    return { error: branchSelection.message };
   }
   if (!ASSIGNABLE_STRINGS.includes(role)) {
     return { error: "Unsupported role selection." };
   }
-  if (!outletAllowedForInvite(ctx, outletId)) {
-    return { error: "You cannot manage that branch." };
+  for (const outletId of branchSelection.activeOutletIds) {
+    if (!outletAllowedForInvite(ctx, outletId)) {
+      return { error: "You cannot manage one or more of those branches." };
+    }
   }
 
   const supabase = await createServerSupabaseClient();
@@ -110,6 +132,9 @@ export async function createStaffMemberAction(_prev: StaffActionState, formData:
       email,
       password,
       email_confirm: true,
+      ...(isStaffPhoneRequiredForProvisioning(role) && phoneE164
+        ? { phone: phoneE164, phone_confirm: true }
+        : {}),
       user_metadata: { full_name: fullName.length ? fullName : email },
     });
 
@@ -142,45 +167,42 @@ export async function createStaffMemberAction(_prev: StaffActionState, formData:
     return { error: e instanceof Error ? e.message : "Photo upload failed." };
   }
 
-  await persistStaffProfileDisplay(service, profileId, email, fullName, phone, avatarUrl);
+  await persistStaffProfileDisplay(service, profileId, email, fullName, phoneE164, avatarUrl, ctx.user.id);
 
-  const { data: collide } = await supabase
-    .from("staff_assignments")
-    .select("id")
-    .eq("profile_id", profileId)
-    .eq("outlet_id", outletId)
-    .is("revoked_at", null)
-    .maybeSingle();
-
-  if (collide?.id) {
-    return { error: "This person already has an active assignment at that branch." };
+  if (isStaffPhoneRequiredForProvisioning(role) && phoneE164) {
+    await service.auth.admin.updateUserById(profileId, { phone: phoneE164, phone_confirm: true });
   }
 
-  const { data: inserted, error: insertErr } = await supabase
-    .from("staff_assignments")
-    .insert({
-      profile_id: profileId,
-      outlet_id: outletId,
-      role,
-      is_primary: isPrimary,
-      assigned_by: ctx.user.id,
-      invite_pending: false,
-      notes: "created_via_dashboard",
-    })
-    .select("id")
-    .maybeSingle();
+  const manageableOutletIds =
+    ctx.appRole === ROLES.SUPERADMIN
+      ? await loadOrgOutletIdsForAssignment(supabase, branchSelection.primaryOutletId)
+      : [...new Set(ctx.managedOutletIds)];
 
-  if (insertErr || !inserted?.id) {
-    return { error: insertErr?.message ?? "Could not save roster row." };
+  const branchResult = await syncStaffProfileBranchAccess(supabase, {
+    profileId,
+    role,
+    activeOutletIds: branchSelection.activeOutletIds,
+    primaryOutletId: branchSelection.primaryOutletId,
+    manageableOutletIds,
+    assignedBy: ctx.user.id,
+  });
+
+  if (!branchResult.ok) {
+    return { error: branchResult.message };
   }
 
   revalidatePath(ROUTES.dashboardStaff);
-  revalidatePath(dashboardStaffAssignmentPath(inserted.id));
+  revalidatePath(dashboardStaffAssignmentPath(branchResult.primaryAssignmentId));
   revalidatePath(ROUTES.dashboard);
 
+  const branchNote =
+    branchSelection.activeOutletIds.length > 1
+      ? ` across ${branchSelection.activeOutletIds.length} branches`
+      : "";
+
   return {
-    success: `${fullName || email} is on the roster. Share the temporary password securely — they can change it after signing in.`,
-    assignmentId: inserted.id,
+    success: `${fullName || email} is on the roster${branchNote}. Share the temporary password securely — they can change it after signing in.`,
+    assignmentId: branchResult.primaryAssignmentId,
   };
 }
 
@@ -193,14 +215,13 @@ export async function updateStaffProfileAction(_prev: StaffActionState, formData
 
   const assignmentId = String(formData.get("assignment_id") ?? "").trim();
   const fullName = String(formData.get("full_name") ?? "").trim();
-  const phone = String(formData.get("phone") ?? "").trim();
 
   if (!assignmentId) return { error: "Missing assignment." };
 
   const supabase = await createServerSupabaseClient();
   const { data: row, error: loadErr } = await supabase
     .from("staff_assignments")
-    .select("id,outlet_id,profile_id")
+    .select("id,outlet_id,profile_id,role")
     .eq("id", assignmentId)
     .is("revoked_at", null)
     .maybeSingle();
@@ -210,6 +231,24 @@ export async function updateStaffProfileAction(_prev: StaffActionState, formData
   }
   if (!outletAllowedForInvite(ctx, row.outlet_id)) {
     return { error: "You cannot edit teammates at that branch." };
+  }
+
+  const role = String(row.role ?? "").trim() as AssignableStaffRole;
+  if (!ASSIGNABLE_STRINGS.includes(role)) {
+    return { error: "Unsupported role on this assignment." };
+  }
+
+  const phoneRaw = String(formData.get("phone") ?? "").trim();
+  let phoneE164: string | undefined;
+  if (phoneRaw.length > 0) {
+    const normalized = normalizeToE164(phoneRaw);
+    if (!normalized.ok) {
+      return { error: normalized.message };
+    }
+    phoneE164 = normalized.e164;
+  }
+  if (isStaffPhoneRequiredForProvisioning(role) && !phoneE164) {
+    return { error: "Phone is required for reception and trainer roles (Phone OTP)." };
   }
 
   const service = createServiceRoleSupabaseClient();
@@ -223,7 +262,11 @@ export async function updateStaffProfileAction(_prev: StaffActionState, formData
 
   const { data: existing } = await service.from("profiles").select("email").eq("id", row.profile_id).maybeSingle();
   const email = (existing?.email as string | undefined) ?? "";
-  await persistStaffProfileDisplay(service, row.profile_id, email, fullName, phone, avatarUrl);
+  await persistStaffProfileDisplay(service, row.profile_id, email, fullName, phoneE164, avatarUrl, ctx.user.id);
+
+  if (isStaffPhoneRequiredForProvisioning(role) && phoneE164) {
+    await service.auth.admin.updateUserById(row.profile_id, { phone: phoneE164, phone_confirm: true });
+  }
 
   revalidatePath(ROUTES.dashboardStaff);
   revalidatePath(dashboardStaffAssignmentPath(assignmentId));
@@ -279,6 +322,16 @@ export async function updateStaffAssignmentAction(_prev: StaffActionState, formD
     }
   }
 
+  if (isStaffPhoneRequiredForProvisioning(role)) {
+    const { data: prof } = await supabase.from("profiles").select("phone").eq("id", row.profile_id).maybeSingle();
+    if (!prof?.phone?.trim()) {
+      return {
+        error:
+          "Reception and trainer roles require a phone on the profile (Phone OTP). Open the profile editor and save a mobile number first.",
+      };
+    }
+  }
+
   const { error } = await supabase
     .from("staff_assignments")
     .update({ role, outlet_id: outletId, is_primary: isPrimary })
@@ -289,6 +342,114 @@ export async function updateStaffAssignmentAction(_prev: StaffActionState, formD
   revalidatePath(ROUTES.dashboardStaff);
   revalidatePath(dashboardStaffAssignmentPath(assignmentId));
   return { success: "Assignment updated." };
+}
+
+/**
+ * Sets which branches a teammate may access — one branch or many (e.g. org-wide branch admin).
+ *
+ * Form fields: `assignment_id`, `role`, `access_mode` (`single` | `multi`), `primary_outlet_id`,
+ * `outlet_id` (single), or repeated `outlet_ids` (multi). See `syncStaffProfileBranchAccess`.
+ */
+export async function syncStaffBranchAssignmentsAction(
+  _prev: StaffActionState,
+  formData: FormData,
+): Promise<StaffActionState> {
+  const ctx = await getAuthDashboardContext();
+  if (!ctx.user || !canManageStaffAssignments(ctx.appRole)) {
+    return { error: "Only gym owners can change branch access." };
+  }
+
+  const assignmentId = String(formData.get("assignment_id") ?? "").trim();
+  const role = String(formData.get("role") ?? "").trim() as AssignableStaffRole;
+  const branchSelection = parseStaffBranchFormSelection(formData);
+
+  if (!assignmentId || !ASSIGNABLE_STRINGS.includes(role)) {
+    return { error: "Role and branch access are required." };
+  }
+  if (!branchSelection.ok) {
+    return { error: branchSelection.message };
+  }
+
+  const { activeOutletIds, primaryOutletId } = branchSelection;
+
+  const supabase = await createServerSupabaseClient();
+
+  const { data: row, error: loadErr } = await supabase
+    .from("staff_assignments")
+    .select("id,outlet_id,profile_id")
+    .eq("id", assignmentId)
+    .is("revoked_at", null)
+    .maybeSingle();
+
+  if (loadErr || !row?.profile_id || !row.outlet_id) {
+    return { error: "Assignment not found." };
+  }
+  if (!outletAllowedForInvite(ctx, row.outlet_id)) {
+    return { error: "You cannot edit this assignment." };
+  }
+
+  for (const outletId of activeOutletIds) {
+    if (!outletAllowedForInvite(ctx, outletId)) {
+      return { error: "You cannot assign one or more of those branches." };
+    }
+  }
+
+  if (isStaffPhoneRequiredForProvisioning(role)) {
+    const { data: prof } = await supabase.from("profiles").select("phone").eq("id", row.profile_id).maybeSingle();
+    if (!prof?.phone?.trim()) {
+      return {
+        error:
+          "Reception and trainer roles require a phone on the profile (Phone OTP). Save a mobile number in the profile section first.",
+      };
+    }
+  }
+
+  const manageableOutletIds =
+    ctx.appRole === ROLES.SUPERADMIN
+      ? await loadOrgOutletIdsForAssignment(supabase, row.outlet_id)
+      : [...new Set(ctx.managedOutletIds)];
+
+  const result = await syncStaffProfileBranchAccess(supabase, {
+    profileId: row.profile_id,
+    role,
+    activeOutletIds,
+    primaryOutletId,
+    manageableOutletIds,
+    assignedBy: ctx.user.id,
+  });
+
+  if (!result.ok) {
+    return { error: result.message };
+  }
+
+  revalidatePath(ROUTES.dashboardStaff);
+  revalidatePath(dashboardStaffAssignmentPath(result.primaryAssignmentId));
+  revalidatePath(dashboardStaffAssignmentPath(assignmentId));
+  revalidatePath(ROUTES.dashboard);
+  return { success: result.message };
+}
+
+/** Resolves every outlet in the same organization as `anchorOutletId` (superadmin branch sync). */
+async function loadOrgOutletIdsForAssignment(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  anchorOutletId: string,
+): Promise<string[]> {
+  const { data: anchor } = await supabase
+    .from("outlets")
+    .select("organization_id")
+    .eq("id", anchorOutletId)
+    .maybeSingle();
+
+  if (!anchor?.organization_id) return [anchorOutletId];
+
+  const { data: rows } = await supabase
+    .from("outlets")
+    .select("id")
+    .eq("organization_id", anchor.organization_id)
+    .is("deleted_at", null);
+
+  const ids = (rows ?? []).map((r) => r.id).filter(Boolean);
+  return ids.length ? ids : [anchorOutletId];
 }
 
 /** Soft revoke roster access while retaining history for auditors. */

@@ -2,6 +2,9 @@
 
 - `migrations/001_gym_saas_core_admin_console.sql` — **bootstrap** DDL + RLS for the tables this admin console touches on a fresh database.
 - `migrations/002_storage_gym_brand_logos_bucket.sql` — public Storage bucket `gym-brand-logos` for `organizations.logo_url` (superadmin onboard upload). Bucket id is mirrored in `src/lib/supabase/gym-brand-logos-storage.ts`.
+- **`migrations/020_profiles_nullable_email_phone_signup.sql`** — nullable `profiles.email` + `handle_new_user` copies `auth.users.phone`; required for **phone-primary (OTP) customers** (`docs/auth-by-role.md`).
+- **`migrations/022_audit_tracking.sql`** — `created_by` / `updated_by` on tenant tables (incl. `gym_memberships`), `audit_log`, triggers.
+- **`migrations/023_profiles_created_by.sql`** — `profiles.created_by` for staff-provisioned members (022 only added `profiles.updated_by`).
 - `migrations/018_profile_avatars_bucket.sql` — public Storage bucket `profile-avatars` for staff/member headshots (`src/lib/supabase/profile-avatars-storage.ts`). Required for photo upload on `/dashboard/staff`.
 - If you already maintain the full **Gym SaaS v1.0** schema elsewhere, keep that file as the source of truth and **avoid applying conflicting migrations** to the same project.
 
@@ -13,6 +16,31 @@ Apply from the Supabase SQL editor or with the Supabase CLI:
 ```bash
 supabase db push
 ```
+
+### Edge Functions — phone OTP (MSG91)
+
+| Function | Path | Purpose |
+| --- | --- | --- |
+| `send-otp` | `supabase/functions/send-otp/` | POST `{ "phone": "+9198…" }` → MSG91 sends 6-digit OTP |
+| `verify-otp` | `supabase/functions/verify-otp/` | POST `{ "phone": "+9198…", "otp": "123456" }` → MSG91 verifies code |
+
+**Shared code:** `supabase/functions/_shared/` (`http.ts`, `msg91.ts`) — import with relative paths from each function.
+
+**Secrets** (Dashboard → Edge Functions → Secrets, or CLI):
+
+```bash
+supabase secrets set MSG91_AUTH_KEY=your_key MSG91_FLOW_ID=your_flow_id
+```
+
+**Local serve:**
+
+```bash
+supabase functions serve send-otp verify-otp --env-file .env.local
+```
+
+Both functions use `Deno.serve` (no `deno.land/std` import) so TypeScript/IDE resolution works with `deno_version = 2` in `config.toml`.
+
+**Next.js `tsc`:** `supabase/functions` is excluded from the root `tsconfig.json` (Deno runtime, `.ts` import suffixes). Edit functions with the [Deno VS Code extension](https://marketplace.visualstudio.com/items?itemName=denoland.vscode-deno) enabled for that folder, or rely on `supabase functions serve` for type-checking at deploy time.
 
 ### Quick fix: missing `assigned_trainer_id`
 

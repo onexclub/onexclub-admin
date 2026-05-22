@@ -62,7 +62,7 @@ export default async function DashboardBranchesPage() {
 
         <p className="text-xs text-zinc-500">
           Add roster entries from{" "}
-          <Link className="font-medium text-orange-600 hover:underline" href={ROUTES.dashboardCustomerOnboard}>
+          <Link className="font-medium text-orange-600 hover:underline" href={ROUTES.dashboardCustomerNew}>
             Add customer
           </Link>
           .

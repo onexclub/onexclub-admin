@@ -10,6 +10,7 @@ import { ROLES } from "@/types/roles";
 import { ROUTES } from "@/utils/routes";
 import { randomUUID } from "node:crypto";
 import { slugifyOrganization } from "@/utils/slug";
+import { sendGymOwnerWelcome } from "@/lib/email/send-welcome-emails";
 
 /** Text fields echoed back after a failed submit (never includes password — user re-enters). */
 export type OnboardGymFilledValues = {
@@ -151,10 +152,12 @@ function normalizeCountryCode(countryRaw: string): { ok: true; code: string } | 
  * Superadmin-only onboarding:
  * 0) **Before any tenant rows:** verify admin email is not already registered (RPC `profile_email_exists_normalized` — compares `lower(trim(email))`; see migration `003_profile_email_normalized_match.sql`).
  * 1) Inserts `organizations` (with `address_json`) + first branch (`outlets`) with mandatory address fields.
+ *    `created_by` / `updated_by` are set by `022_audit_tracking` triggers from the superadmin session (`auth.uid()`).
  * 2) Optionally uploads a brand logo to Storage (`gym-brand-logos` bucket) and sets `organizations.logo_url`
  *    — see `uploadGymBrandLogoForOrganization` in `@/lib/supabase/gym-brand-logos-storage`.
  * 3) Creates the gym admin auth user via **Admin API** (service role) — never callable from the browser.
  * 4) Inserts `staff_assignments` with role **`gym_owner`** (not branch_admin) so org-wide branch expansion + RLS align; additional branches use `syncGymOwnerAssignmentsForOutlet`.
+ * 5) Sends a welcome email (`sendGymOwnerWelcome` → Resend), if env is configured (`RESEND_API_KEY`, `RESEND_FROM_EMAIL`). Same logic as a future `POST /api/onboard-gym`.
  * On success: redirects to All gyms (`?toast=gym-created`); {@link SuperadminFlashBanner} shows the message.
  */
 export async function onboardGymAction(
@@ -224,7 +227,7 @@ export async function onboardGymAction(
       contact_email: adminEmail,
       address_json: addressJson,
     })
-    .select("id")
+    .select("id, name, plan_tier")
     .single();
 
   if (orgError) {
@@ -266,7 +269,7 @@ export async function onboardGymAction(
       state,
       country: countryEffective,
     })
-    .select("id")
+    .select("id, name")
     .single();
 
   if (outletError) {
@@ -304,6 +307,23 @@ export async function onboardGymAction(
     return errorRecovery(formData, {
       error: `${staffError.message} (Auth user was created; you may need to clean up in Supabase Dashboard.)`,
     });
+  }
+
+  try {
+    const ownerDisplayName =
+      adminFullName.trim() ||
+      (adminEmail.includes("@") ? adminEmail.slice(0, adminEmail.indexOf("@")) : adminEmail);
+    await sendGymOwnerWelcome({
+      gymName: org.name,
+      orgId: org.id,
+      outletCity: city,
+      outletName: outlet.name,
+      ownerEmail: adminEmail,
+      ownerName: ownerDisplayName,
+      planTier: org.plan_tier,
+    });
+  } catch (welcomeErr) {
+    console.error("[email] Gym owner welcome after onboard:", welcomeErr);
   }
 
   revalidatePath(ROUTES.superadmin);

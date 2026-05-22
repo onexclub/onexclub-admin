@@ -1,37 +1,55 @@
 import Link from "next/link";
+import { Plus } from "lucide-react";
+import { Suspense } from "react";
 import { RoleGuard } from "@/components/auth/RoleGuard";
+import { CustomerCustomersViewTabs } from "@/components/dashboard/CustomerCustomersViewTabs";
+import { CustomerOnboardDraftPanel } from "@/components/dashboard/CustomerOnboardDraftPanel";
+import { CustomerRosterFilters } from "@/components/dashboard/CustomerRosterFilters";
+import { CustomerRosterPagination } from "@/components/dashboard/CustomerRosterPagination";
+import { CustomerRosterTable } from "@/components/dashboard/CustomerRosterTable";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { fetchMembershipPlansForOutlets } from "@/lib/admin/membership-plans-admin";
+import { listTrainersGroupedByOutlet } from "@/lib/admin/outlet-trainers";
 import {
-  fetchMembershipPlansForOutlets,
-} from "@/lib/admin/membership-plans-admin";
+  joinedAtOrderAscending,
+  parseCustomerRosterSort,
+  sortCustomerRosterRows,
+} from "@/lib/customers/roster-sort";
+import {
+  paginateCustomerRosterRows,
+  parseCustomerRosterPage,
+  parseCustomerRosterPageSize,
+} from "@/lib/customers/roster-pagination";
 import type { DashboardFeature } from "@/lib/auth/roles";
-import {
-  MEMBERSHIP_CATALOG_EDITOR_ROLES,
-  ROLES,
-} from "@/lib/auth/roles";
+import { ROLES, canAssignDedicatedTrainer } from "@/lib/auth/roles";
+import { PROFILE_GENDER_OPTIONS } from "@/lib/profile/vitals";
+import { todayUtcIsoDate } from "@/lib/date-term";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { effectiveManagedOutletIds, getAuthDashboardContext } from "@/services/auth.service";
 import { isAdminConsoleRole } from "@/types/roles";
-import { ROUTES, dashboardCustomerMembershipPath } from "@/utils/routes";
+import { ROUTES } from "@/utils/routes";
 
 const FEATURE: DashboardFeature = "customers";
+
+const GENDER_FILTER_VALUES = new Set([
+  "unset",
+  ...PROFILE_GENDER_OPTIONS.map((o) => o.value),
+]);
 
 type MembershipListItem = {
   id: string;
   status: string;
   outlet_id: string;
   profile_id: string;
-  assigned_trainer_id: string | null;
-  onboarded_by: string | null;
   joined_at: string | null;
   plan_id: string | null;
   start_date: string | null;
   end_date: string | null;
-  amount_paid: number | null;
-  currency: string | null;
+  assigned_trainer_id: string | null;
+  assigned_trainer_name: string | null;
   profile: { full_name: string | null; email: string | null; phone: string | null } | null;
   outlet: { name: string | null; city: string | null } | null;
-  plan: { id: string; name: string } | null;
+  plan: { id: string; name: string; price: number | null; currency: string | null } | null;
 };
 
 function firstOrSelf<T>(v: T | T[] | null | undefined): T | null {
@@ -45,62 +63,53 @@ function toMembershipListItem(raw: unknown): MembershipListItem {
     status: string;
     outlet_id: string;
     profile_id: string;
-    assigned_trainer_id?: string | null;
-    onboarded_by: string | null;
     joined_at: string | null;
     plan_id: string | null;
     start_date: string | null;
     end_date: string | null;
-    amount_paid: number | null;
-    currency: string | null;
-    profile:
-      | { full_name: string | null; email: string | null; phone: string | null }
-      | null
-      | unknown[]
-      | unknown[];
+    profile: unknown;
     outlet: { name: string | null; city: string | null } | null | unknown[];
-    membership_plans: { id: string; name: string } | null | unknown[] | unknown;
+    membership_plans: { id: string; name: string; price: number | null; currency: string | null } | null | unknown[] | unknown;
+    assigned_trainer_id?: string | null;
+    assigned_trainer?: { full_name: string | null; email: string | null } | null | unknown[] | unknown;
   };
+  const trainerNested = firstOrSelf(r.assigned_trainer as never);
+  const trainerName =
+    (trainerNested as { full_name?: string | null; email?: string | null } | null)?.full_name?.trim() ||
+    (trainerNested as { full_name?: string | null; email?: string | null } | null)?.email?.trim() ||
+    null;
   return {
     id: r.id,
     status: r.status,
     outlet_id: r.outlet_id,
     profile_id: r.profile_id,
-    assigned_trainer_id: r.assigned_trainer_id ?? null,
-    onboarded_by: r.onboarded_by,
     joined_at: r.joined_at,
     plan_id: r.plan_id,
     start_date: r.start_date,
     end_date: r.end_date,
-    amount_paid: r.amount_paid,
-    currency: r.currency,
+    assigned_trainer_id: r.assigned_trainer_id ?? null,
+    assigned_trainer_name: trainerName,
     profile: firstOrSelf(r.profile as never),
     outlet: firstOrSelf(r.outlet as never),
     plan: firstOrSelf(r.membership_plans as never),
   };
 }
 
-function statusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    active: "Active",
-    inactive: "Inactive",
-    suspended: "Suspended",
-    expired: "Expired",
-    pending: "Pending",
-  };
-  return labels[status] ?? status;
-}
-
-/**
- * `/dashboard/customers` — server-side filters + row-level affordances follow `PERMISSIONS.customers`.
- *
- * **Trainer scope:** trainers only see memberships they’re assigned to (same filter as the membership query).
- */
-
+/** `/dashboard/customers` — searchable roster; "New customer" starts `/dashboard/customers/new`. */
 export default async function DashboardCustomersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; outlet?: string; plan?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    outlet?: string;
+    plan?: string;
+    gender?: string;
+    status?: string;
+    sort?: string;
+    page?: string;
+    limit?: string;
+    tab?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const ctx = await getAuthDashboardContext();
@@ -110,6 +119,13 @@ export default async function DashboardCustomersPage({
   const q = (sp.q ?? "").trim().toLowerCase();
   const outletFilter = (sp.outlet ?? "").trim();
   const planFilter = (sp.plan ?? "").trim();
+  const genderFilter = (sp.gender ?? "").trim();
+  const statusFilter = (sp.status ?? "").trim();
+  const sort = parseCustomerRosterSort(sp.sort);
+  const page = parseCustomerRosterPage(sp.page);
+  const pageSize = parseCustomerRosterPageSize(sp.limit);
+  const activeTab = sp.tab === "drafts" ? "drafts" : "members";
+  const showDraftsTab = isAdminConsoleRole(ctx.appRole) && ctx.user;
 
   if (!outletIds.length) {
     return (
@@ -133,13 +149,27 @@ export default async function DashboardCustomersPage({
     .is("deleted_at", null);
 
   type OutletLite = { id: string; name: string | null; city: string | null };
-
   const outletOptions: OutletLite[] = (outletLookupRows ?? []) as OutletLite[];
+
+  let profileIdsFilter: string[] | null = null;
+  if (genderFilter.length && GENDER_FILTER_VALUES.has(genderFilter)) {
+    let profileQuery = supabase.from("profiles").select("id").is("deleted_at", null);
+    if (genderFilter === "unset") {
+      profileQuery = profileQuery.is("gender", null);
+    } else {
+      profileQuery = profileQuery.eq("gender", genderFilter);
+    }
+    const { data: matchProfiles } = await profileQuery;
+    profileIdsFilter = (matchProfiles ?? []).map((p: { id: string }) => p.id);
+    if (profileIdsFilter.length === 0) {
+      profileIdsFilter = [];
+    }
+  }
 
   let query = supabase
     .from("gym_memberships")
     .select(
-      "id,status,outlet_id,profile_id,assigned_trainer_id,onboarded_by,joined_at,plan_id,start_date,end_date,amount_paid,currency,profile:profiles!profile_id(full_name,email,phone),outlet:outlets(name,city),membership_plans(id,name)",
+      `id,status,outlet_id,profile_id,joined_at,plan_id,start_date,end_date,assigned_trainer_id,profile:profiles!profile_id(full_name,email,phone),outlet:outlets(name,city),membership_plans(id,name,price,currency),assigned_trainer:profiles!gym_memberships_assigned_trainer_id_fkey(full_name,email)`,
     )
     .in("outlet_id", outletIds)
     .is("deleted_at", null);
@@ -156,7 +186,24 @@ export default async function DashboardCustomersPage({
     query = query.eq("plan_id", planFilter);
   }
 
-  query = query.order("joined_at", { ascending: false });
+  const VALID_STATUS = new Set(["active", "inactive", "suspended", "expired", "pending"]);
+  if (statusFilter.length && VALID_STATUS.has(statusFilter)) {
+    query = query.eq("status", statusFilter);
+  }
+
+  if (profileIdsFilter !== null) {
+    if (profileIdsFilter.length === 0) {
+      query = query.eq("id", "00000000-0000-0000-0000-000000000001");
+    } else {
+      query = query.in("profile_id", profileIdsFilter);
+    }
+  }
+
+  if (sort === "joined_desc" || sort === "joined_asc") {
+    query = query.order("joined_at", { ascending: joinedAtOrderAscending(sort), nullsFirst: false });
+  } else {
+    query = query.order("joined_at", { ascending: false, nullsFirst: false });
+  }
 
   const { data, error } = await query;
 
@@ -164,145 +211,109 @@ export default async function DashboardCustomersPage({
     return <EmptyState title="Unable to load memberships" description={error.message} />;
   }
 
-  const membershipsRaw = data ?? [];
-
-  let memberships = membershipsRaw.map(toMembershipListItem);
+  let memberships = (data ?? []).map(toMembershipListItem);
 
   if (q.length) {
     memberships = memberships.filter((row) => {
-      const hay = `${row.profile?.full_name ?? ""} ${row.profile?.email ?? ""}`.toLowerCase();
+      const hay = `${row.profile?.full_name ?? ""} ${row.profile?.email ?? ""} ${row.profile?.phone ?? ""}`.toLowerCase();
       return hay.includes(q);
     });
   }
 
-  const filtersForm = (
-    <form method="GET" className="grid gap-3 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-950/60 md:grid-cols-5">
-      <label className="flex flex-col gap-1 md:col-span-2">
-        Search
-        <input
-          defaultValue={sp.q ?? ""}
-          name="q"
-          placeholder="Name or email"
-          className="rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-        />
-      </label>
-      <label className="flex flex-col gap-1">
-        Branch
-        <select
-          defaultValue={outletFilter}
-          name="outlet"
-          className="rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-        >
-          <option value="">All</option>
-          {outletOptions.map((o) => (
-            <option key={o.id} value={o.id}>
-              {[o.name, o.city].filter(Boolean).join(" · ") || o.id.slice(0, 8)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1 md:col-span-2">
-        Plan
-        <select
-          defaultValue={planFilter}
-          name="plan"
-          className="rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950"
-        >
-          <option value="">All plans</option>
-          {planRows.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button
-        type="submit"
-        className="md:col-span-5 rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700"
-      >
-        Apply filters
-      </button>
-    </form>
-  );
+  memberships = sortCustomerRosterRows(memberships, sort);
+
+  const paginated = paginateCustomerRosterRows(memberships, page, pageSize);
+
+  const trainersGrouped =
+    ctx.appRole === ROLES.TRAINER
+      ? new Map<string, never[]>()
+      : await listTrainersGroupedByOutlet(supabase, outletIds);
+  const trainersByOutlet = Object.fromEntries(trainersGrouped.entries());
+  const canAssignTrainer = canAssignDedicatedTrainer(ctx.appRole);
 
   return (
     <RoleGuard role={ctx.appRole} feature={FEATURE}>
-      <div className="space-y-8">
-        <div>
-          <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Customers</h2>
-          <p className="mt-2 max-w-3xl text-sm text-zinc-600 dark:text-zinc-400">
-            Browse members by branch and plan. Open someone’s page to change their pass, assign a coach, or update contact details — what you can do depends on your role.
-          </p>
-          {isAdminConsoleRole(ctx.appRole) ? (
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <Link
-                href={ROUTES.dashboardCustomerOnboard}
-                className="inline-flex rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600"
-              >
-                Add customer
-              </Link>
-              <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                Creates Supabase Auth + membership, then every outlet questionnaire.
-              </span>
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-3">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Customers</h1>
+              <p className="mt-1 max-w-xl text-sm text-zinc-600 dark:text-zinc-400">
+                Members across your branches — search, filter, and open a profile to manage their pass.
+              </p>
             </div>
+            {showDraftsTab ? (
+              <Suspense fallback={null}>
+                <CustomerCustomersViewTabs
+                  actorProfileId={ctx.user!.id}
+                  defaultOutletId={outletOptions[0]?.id ?? ""}
+                />
+              </Suspense>
+            ) : null}
+          </div>
+          {isAdminConsoleRole(ctx.appRole) ? (
+            <Link
+              href={ROUTES.dashboardCustomerNew}
+              className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-orange-700 dark:bg-orange-500 dark:hover:bg-orange-600"
+            >
+              <Plus className="size-4" aria-hidden />
+              New customer
+            </Link>
           ) : null}
         </div>
 
-        {filtersForm}
-
-        {!memberships.length ? (
-          <EmptyState title="No matches" description="Loosen filters or onboard your first roster entry." />
-        ) : (
-          <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-zinc-200 bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-600 dark:border-zinc-900 dark:bg-zinc-950/80">
-                <tr>
-                  <th className="px-4 py-3 font-semibold">Customer</th>
-                  <th className="px-4 py-3 font-semibold">Branch</th>
-                  <th className="px-4 py-3 font-semibold">Plan</th>
-                  <th className="px-4 py-3 font-semibold">Status</th>
-                  <th className="px-4 py-3 font-semibold">Term</th>
-                  <th className="px-4 py-3 font-semibold"> </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                {memberships.map((row) => {
-                  const showPlans = MEMBERSHIP_CATALOG_EDITOR_ROLES.includes(ctx.appRole as never);
-                  const detailHref = dashboardCustomerMembershipPath(row.id);
-                  return (
-                    <tr key={row.id}>
-                      <td className="px-4 py-3">
-                        <p className="font-semibold">{row.profile?.full_name ?? "Unnamed"}</p>
-                        <p className="text-xs text-zinc-600 dark:text-zinc-400">{row.profile?.email ?? "—"}</p>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-zinc-600 dark:text-zinc-400">
-                        {row.outlet?.name ?? row.outlet_id}
-                        {row.outlet?.city ? ` · ${row.outlet.city}` : ""}
-                      </td>
-                      <td className="px-4 py-3 text-xs">
-                        {row.plan?.name ?? "—"}
-                        {showPlans && row.plan_id ? (
-                          <span className="mt-1 block font-mono text-[10px] text-zinc-500">{row.plan_id}</span>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-zinc-800 dark:text-zinc-200">{statusLabel(row.status)}</td>
-                      <td className="px-4 py-3 text-xs text-zinc-600 dark:text-zinc-400">
-                        {row.start_date ?? "—"} → {row.end_date ?? "Open"}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <Link
-                          href={detailHref}
-                          className="inline-flex rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-                        >
-                          View profile
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        {activeTab === "drafts" && showDraftsTab ? (
+          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+            <CustomerOnboardDraftPanel
+              actorProfileId={ctx.user!.id}
+              outlets={outletOptions}
+              defaultStartDate={todayUtcIsoDate()}
+            />
           </div>
+        ) : (
+        <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+          <Suspense fallback={null}>
+            <CustomerRosterFilters
+              outlets={outletOptions}
+              plans={planRows}
+              initialQ={sp.q ?? ""}
+              initialOutlet={outletFilter}
+              initialPlan={planFilter}
+              initialGender={genderFilter}
+              initialStatus={statusFilter}
+              initialSort={sort}
+            />
+          </Suspense>
+
+          {paginated.rows.length ? (
+            <CustomerRosterTable
+              embedded
+              rows={paginated.rows}
+              trainersByOutlet={trainersByOutlet}
+              canAssignTrainer={canAssignTrainer}
+            />
+          ) : (
+            <div className="px-4 py-14 text-center">
+              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">No customers found</p>
+              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                {isAdminConsoleRole(ctx.appRole)
+                  ? "Reset filters or add your first member with New customer."
+                  : "No members match your filters."}
+              </p>
+            </div>
+          )}
+
+          <Suspense fallback={null}>
+            <CustomerRosterPagination
+              page={paginated.page}
+              pageSize={paginated.pageSize}
+              total={paginated.total}
+              totalPages={paginated.totalPages}
+              rangeFrom={paginated.rangeFrom}
+              rangeTo={paginated.rangeTo}
+            />
+          </Suspense>
+        </div>
         )}
       </div>
     </RoleGuard>

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { MEMBERSHIP_CATALOG_EDITOR_ROLES } from "@/lib/auth/roles";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { auditActorOnInsert } from "@/lib/supabase/audit-columns";
 import { canManageOutletForBranchAdmin, getAuthDashboardContext } from "@/services/auth.service";
 import { ROUTES } from "@/utils/routes";
 import type { BillingCycleDb } from "@/types/database.types";
@@ -142,12 +143,13 @@ export async function saveMembershipPlanAction(
     const { error } = await supabase.from("membership_plans").insert({
       ...rowBody,
       is_active: true,
-      created_by: ctx.user.id,
+      ...auditActorOnInsert(ctx.user.id),
     });
     if (error) return { error: error.message };
     revalidatePath(ROUTES.adminPlans);
     revalidatePath(ROUTES.dashboardPlans);
     revalidatePath(ROUTES.adminMemberOnboard);
+    revalidatePath(ROUTES.dashboardCustomerNew);
     revalidatePath(ROUTES.dashboardCustomerOnboard);
     revalidatePath(ROUTES.adminCustomers);
     return { success: `Plan “${payload.name}” published.` };
@@ -166,6 +168,7 @@ export async function saveMembershipPlanAction(
   revalidatePath(ROUTES.adminPlans);
   revalidatePath(ROUTES.dashboardPlans);
   revalidatePath(ROUTES.adminMemberOnboard);
+  revalidatePath(ROUTES.dashboardCustomerNew);
   revalidatePath(ROUTES.dashboardCustomerOnboard);
   revalidatePath(ROUTES.adminCustomers);
   revalidatePath(ROUTES.dashboardCustomers);
@@ -202,6 +205,7 @@ export async function setMembershipPlanActiveAction(formData: FormData): Promise
   revalidatePath(ROUTES.adminPlans);
   revalidatePath(ROUTES.dashboardPlans);
   revalidatePath(ROUTES.adminMemberOnboard);
+  revalidatePath(ROUTES.dashboardCustomerNew);
   revalidatePath(ROUTES.dashboardCustomerOnboard);
   revalidatePath(ROUTES.adminCustomers);
   revalidatePath(ROUTES.dashboardCustomers);

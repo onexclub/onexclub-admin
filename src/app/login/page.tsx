@@ -13,7 +13,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
         <div className="mb-8 text-center">
           <h1 className="text-2xl font-semibold text-zinc-900">Sign in</h1>
-          <p className="mt-2 text-sm text-zinc-500">Gym operations console — use your work email.</p>
+          <p className="mt-2 text-sm text-zinc-500">Use the email address your gym or platform team provided.</p>
         </div>
         <LoginForm />
         <p className="mt-4 text-center text-sm">
@@ -22,7 +22,7 @@ export default function LoginPage() {
           </Link>
         </p>
         <p className="mt-6 text-center text-xs text-zinc-500">
-          Trouble signing in? Confirm your Supabase user exists and your profile role matches your assignment.
+          Trouble signing in? Ask your gym manager or platform support to confirm your account is active.
         </p>
         <p className="mt-4 text-center text-sm">
           <Link href="/" className="font-medium text-orange-700 hover:underline">

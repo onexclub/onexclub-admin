@@ -77,15 +77,56 @@ export default async function DashboardStaffMemberPage({
     return <EmptyState title="Could not load branch" description={outletError.message} />;
   }
 
+  let assignableOutletIds = outletIds;
+  if (isSuperadmin) {
+    const { data: anchor } = await supabase
+      .from("outlets")
+      .select("organization_id")
+      .eq("id", assignment.outlet_id)
+      .maybeSingle();
+    if (anchor?.organization_id) {
+      const { data: orgOutlets } = await supabase
+        .from("outlets")
+        .select("id")
+        .eq("organization_id", anchor.organization_id)
+        .is("deleted_at", null);
+      assignableOutletIds = (orgOutlets ?? []).map((o) => o.id).filter(Boolean);
+    } else {
+      assignableOutletIds = [assignment.outlet_id];
+    }
+  }
+
   const { data: outletRows } = await supabase
     .from("outlets")
     .select("id,name,city")
-    .in("id", isSuperadmin ? [assignment.outlet_id] : outletIds)
-    .is("deleted_at", null);
+    .in("id", assignableOutletIds.length ? assignableOutletIds : [assignment.outlet_id])
+    .is("deleted_at", null)
+    .order("name");
 
   const outlets = ((outletRows ?? []) as { id: string; name: string | null; city: string | null }[]).map((o) => ({
     id: o.id,
     name: o.city?.length ? `${o.name ?? "Branch"} · ${o.city}` : (o.name ?? "Branch"),
+  }));
+
+  let siblingQuery = supabase
+    .from("staff_assignments")
+    .select("id,outlet_id,role,is_primary,assigned_at")
+    .eq("profile_id", assignment.profile_id)
+    .is("revoked_at", null)
+    .neq("role", ROLES.GYM_OWNER);
+
+  if (!isSuperadmin && assignableOutletIds.length) {
+    siblingQuery = siblingQuery.in("outlet_id", assignableOutletIds);
+  }
+
+  const { data: siblingRows } = await siblingQuery.order("assigned_at", { ascending: true });
+
+  const branchAssignments = (siblingRows ?? []).map((s) => ({
+    id: s.id,
+    outletId: s.outlet_id,
+    role: s.role,
+    isPrimary: !!s.is_primary,
+    assignedAt: s.assigned_at,
   }));
 
   const row: StaffMemberDetailRow = {
@@ -123,7 +164,13 @@ export default async function DashboardStaffMemberPage({
           <span className="text-zinc-900 dark:text-zinc-100">{row.profile.fullName ?? row.profile.email ?? "Profile"}</span>
         </nav>
 
-        <StaffMemberDetail row={row} outlets={outlets} canManage={canManage} initialEdit={initialEdit} />
+        <StaffMemberDetail
+          row={row}
+          outlets={outlets}
+          branchAssignments={branchAssignments}
+          canManage={canManage}
+          initialEdit={initialEdit}
+        />
       </div>
     </RoleGuard>
   );
