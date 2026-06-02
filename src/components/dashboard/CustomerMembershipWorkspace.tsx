@@ -10,6 +10,7 @@ import {
   type SimpleActionState,
 } from "@/app/admin/customers/actions";
 import { MembershipAssignPlanPanel } from "@/components/admin/MembershipAssignPlanPanel";
+import { CustomerProgramPlansPanel } from "@/components/dashboard/CustomerProgramPlansPanel";
 import { ReviewCard, ReviewRow } from "@/components/dashboard/customer-onboard/ReviewRow";
 import { WizardStepper } from "@/components/dashboard/customer-onboard/WizardStepper";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ import {
 } from "@/lib/customers/customer-onboard-draft";
 import { trainerDisplayLabel } from "@/lib/admin/outlet-trainers";
 import type { CustomerMembershipDetailMembership, TrainerLite } from "@/lib/customers/membership-detail";
+import type { CustomerProgramPlansSnapshot } from "@/lib/customers/customer-program-plans";
 import { formatInrPrice } from "@/lib/customers/format-inr";
 import { formatMembershipTimestampUtcLabel } from "@/lib/date-term";
 import {
@@ -75,7 +77,7 @@ function readableStatus(status: string): string {
 
 const STEP_META = [
   { title: "Identity", subtitle: "Contact details and demographics on the member profile." },
-  { title: "Membership", subtitle: "Branch pass, plan, term dates, and audit trail." },
+  { title: "Membership", subtitle: "Branch pass, catalogue plan, coach, and matched exercise/diet programs." },
   {
     title: SECTION_COPY.basic_info.title,
     subtitle: "Body metrics plus outlet basic_info questionnaire responses.",
@@ -99,6 +101,9 @@ export function CustomerMembershipWorkspace(props: {
   trainers: TrainerLite[];
   canAssignPlan: boolean;
   canAssignTrainer: boolean;
+  canAssignProgramPlans: boolean;
+  canViewProgramPlans: boolean;
+  programPlans: CustomerProgramPlansSnapshot;
   viewer: OnboardingViewerContext;
   /** Base path for `?section=` sync, e.g. `/dashboard/customers/[id]`. */
   basePath: string;
@@ -111,6 +116,9 @@ export function CustomerMembershipWorkspace(props: {
     trainers,
     canAssignPlan,
     canAssignTrainer,
+    canAssignProgramPlans,
+    canViewProgramPlans,
+    programPlans,
     viewer,
     basePath,
   } = props;
@@ -224,48 +232,60 @@ export function CustomerMembershipWorkspace(props: {
               onDone={() => setEditing(false)}
             />
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <ReviewCard title="Membership">
-                <ReviewRow label="Branch" value={outletLabel || "—"} />
-                <ReviewRow label="Pass status" value={readableStatus(membership.status)} />
-                <ReviewRow label="Plan" value={planPriceLabel} />
-                <ReviewRow
-                  label="Current term"
-                  value={`${membership.start_date ?? "—"} → ${membership.end_date ?? "Open-ended"}`}
+            <div className="space-y-6">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <ReviewCard title="Membership">
+                  <ReviewRow label="Branch" value={outletLabel || "—"} />
+                  <ReviewRow label="Pass status" value={readableStatus(membership.status)} />
+                  <ReviewRow label="Plan" value={planPriceLabel} />
+                  <ReviewRow
+                    label="Current term"
+                    value={`${membership.start_date ?? "—"} → ${membership.end_date ?? "Open-ended"}`}
+                  />
+                  <ReviewRow
+                    label="Last payment"
+                    value={
+                      membership.amount_paid != null
+                        ? formatInrPrice(membership.amount_paid, membership.currency ?? "INR")
+                        : "—"
+                    }
+                  />
+                  <ReviewRow
+                    label="Coach"
+                    value={
+                      membership.assigned_trainer_id
+                        ? trainerDisplayLabel(trainers.find((t) => t.id === membership.assigned_trainer_id))
+                        : "Not assigned"
+                    }
+                  />
+                </ReviewCard>
+                <ReviewCard title="Record trail">
+                  <ReviewRow label="Joined" value={formatMembershipTimestampUtcLabel(membership.joined_at)} />
+                  <ReviewRow
+                    label="Onboarded by"
+                    value={
+                      membership.audit.onboardedByLegacyOnly
+                        ? `${membership.audit.onboardedByLabel} (legacy)`
+                        : membership.audit.onboardedByLabel
+                    }
+                  />
+                  <ReviewRow label="Last updated by" value={membership.audit.lastUpdatedByLabel} />
+                  <ReviewRow
+                    label="Last updated"
+                    value={formatMembershipTimestampUtcLabel(membership.audit.updatedAt)}
+                  />
+                </ReviewCard>
+              </div>
+              {canViewProgramPlans ? (
+                <CustomerProgramPlansPanel
+                  membershipId={membership.id}
+                  profileId={membership.profile_id}
+                  outletId={membership.outlet_id}
+                  memberName={membership.profile?.full_name ?? "Member"}
+                  snapshot={programPlans}
+                  canAssign={canAssignProgramPlans}
                 />
-                <ReviewRow
-                  label="Last payment"
-                  value={
-                    membership.amount_paid != null
-                      ? formatInrPrice(membership.amount_paid, membership.currency ?? "INR")
-                      : "—"
-                  }
-                />
-                <ReviewRow
-                  label="Coach"
-                  value={
-                    membership.assigned_trainer_id
-                      ? trainerDisplayLabel(trainers.find((t) => t.id === membership.assigned_trainer_id))
-                      : "Not assigned"
-                  }
-                />
-              </ReviewCard>
-              <ReviewCard title="Record trail">
-                <ReviewRow label="Joined" value={formatMembershipTimestampUtcLabel(membership.joined_at)} />
-                <ReviewRow
-                  label="Onboarded by"
-                  value={
-                    membership.audit.onboardedByLegacyOnly
-                      ? `${membership.audit.onboardedByLabel} (legacy)`
-                      : membership.audit.onboardedByLabel
-                  }
-                />
-                <ReviewRow label="Last updated by" value={membership.audit.lastUpdatedByLabel} />
-                <ReviewRow
-                  label="Last updated"
-                  value={formatMembershipTimestampUtcLabel(membership.audit.updatedAt)}
-                />
-              </ReviewCard>
+              ) : null}
             </div>
           )
         ) : null}
@@ -303,6 +323,9 @@ export function CustomerMembershipWorkspace(props: {
             defaultStartDate={defaultStartDate}
             canAssignPlan={canAssignPlan}
             canAssignTrainer={canAssignTrainer}
+            canAssignProgramPlans={canAssignProgramPlans}
+            canViewProgramPlans={canViewProgramPlans}
+            programPlans={programPlans}
             canSuspend={canSuspendMembership(ctxRole)}
             trainers={trainers}
             ctxRole={ctxRole}
@@ -651,6 +674,9 @@ function ReviewTabContent(props: {
   defaultStartDate: string;
   canAssignPlan: boolean;
   canAssignTrainer: boolean;
+  canAssignProgramPlans: boolean;
+  canViewProgramPlans: boolean;
+  programPlans: CustomerProgramPlansSnapshot;
   canSuspend: boolean;
   trainers: TrainerLite[];
   ctxRole: UserRole;
@@ -670,6 +696,9 @@ function ReviewTabContent(props: {
     defaultStartDate,
     canAssignPlan,
     canAssignTrainer,
+    canAssignProgramPlans,
+    canViewProgramPlans,
+    programPlans,
     canSuspend,
     trainers,
     ctxRole,
@@ -773,6 +802,18 @@ function ReviewTabContent(props: {
           </ReviewCard>
         </div>
       )}
+
+      {canViewProgramPlans ? (
+        <CustomerProgramPlansPanel
+          membershipId={membership.id}
+          profileId={membership.profile_id}
+          outletId={membership.outlet_id}
+          memberName={membership.profile?.full_name ?? "Member"}
+          snapshot={programPlans}
+          canAssign={canAssignProgramPlans}
+          variant="compact"
+        />
+      ) : null}
 
       <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-400">
         {contactCopy.blurb}

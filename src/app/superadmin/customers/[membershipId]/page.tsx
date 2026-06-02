@@ -8,9 +8,12 @@ import { formatMembershipTimestampUtcLabel, todayUtcIsoDate } from "@/lib/date-t
 import { fetchMembershipPlansForOutlets, type MembershipPlanAdminRow } from "@/lib/admin/membership-plans-admin";
 import {
   ROLES,
+  canAssignCustomerProgramPlans,
   canAssignDedicatedTrainer,
   canAssignMembershipPlan,
+  canViewCustomerProgramPlans,
 } from "@/lib/auth/roles";
+import { fetchCustomerProgramPlans } from "@/lib/customers/customer-program-plans";
 import { GYM_MEMBERSHIP_AUDIT_EMBEDS, mapGymMembershipAuditFromRow } from "@/lib/customers/membership-audit";
 import type { CustomerMembershipDetailMembership } from "@/lib/customers/membership-detail";
 import { listTrainersForOutlet } from "@/lib/admin/outlet-trainers";
@@ -117,6 +120,19 @@ export default async function SuperadminCustomerMembershipPage({
 
   const trainers = await listTrainersForOutlet(supabase, membership.outlet_id);
 
+  let programPlans = {
+    exercise: null,
+    diet: null,
+    history: [],
+    intakeComplete: false,
+  } as Awaited<ReturnType<typeof fetchCustomerProgramPlans>>;
+
+  try {
+    programPlans = await fetchCustomerProgramPlans(supabase, membership.profile_id, membership.outlet_id);
+  } catch (err) {
+    console.error("[customer-program-plans] fetch failed:", err);
+  }
+
   const { data: membershipsForProfileRaw } = await supabase
     .from("gym_memberships")
     .select("id,status,joined_at,outlet:outlets(name,city,organization_id,organizations(name,slug))")
@@ -219,6 +235,9 @@ export default async function SuperadminCustomerMembershipPage({
           trainers={trainers}
           canAssignPlan={canAssignMembershipPlan(ROLES.SUPERADMIN)}
           canAssignTrainer={canAssignDedicatedTrainer(ROLES.SUPERADMIN)}
+          canAssignProgramPlans={canAssignCustomerProgramPlans(ROLES.SUPERADMIN)}
+          canViewProgramPlans={canViewCustomerProgramPlans(ROLES.SUPERADMIN)}
+          programPlans={programPlans}
           viewer={viewer}
           basePath={superadminCustomerMembershipPath(membershipId)}
         />

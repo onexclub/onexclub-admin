@@ -11,9 +11,12 @@ import { fetchMembershipPlansForOutlets, type MembershipPlanAdminRow } from "@/l
 import type { DashboardFeature } from "@/lib/auth/roles";
 import {
   ROLES,
+  canAssignCustomerProgramPlans,
   canAssignDedicatedTrainer,
   canAssignMembershipPlan,
+  canViewCustomerProgramPlans,
 } from "@/lib/auth/roles";
+import { fetchCustomerProgramPlans } from "@/lib/customers/customer-program-plans";
 import { listTrainersForOutlets } from "@/lib/admin/outlet-trainers";
 import type { CustomerMembershipDetailMembership } from "@/lib/customers/membership-detail";
 import { GYM_MEMBERSHIP_AUDIT_EMBEDS, mapGymMembershipAuditFromRow } from "@/lib/customers/membership-audit";
@@ -136,6 +139,21 @@ export default async function DashboardCustomerMembershipPage({
   const trainers =
     ctx.appRole === ROLES.TRAINER ? [] : await listTrainersForOutlets(supabase, outletIds);
 
+  let programPlans = {
+    exercise: null,
+    diet: null,
+    history: [],
+    intakeComplete: false,
+  } as Awaited<ReturnType<typeof fetchCustomerProgramPlans>>;
+
+  if (canViewCustomerProgramPlans(ctx.appRole)) {
+    try {
+      programPlans = await fetchCustomerProgramPlans(supabase, membership.profile_id, membership.outlet_id);
+    } catch (err) {
+      console.error("[customer-program-plans] fetch failed:", err);
+    }
+  }
+
   const viewer: OnboardingViewerContext = {
     role: ctx.appRole,
     profileId: membership.profile_id,
@@ -179,6 +197,9 @@ export default async function DashboardCustomerMembershipPage({
             trainers={trainers}
             canAssignPlan={canAssignMembershipPlan(ctx.appRole)}
             canAssignTrainer={canAssignDedicatedTrainer(ctx.appRole)}
+            canAssignProgramPlans={canAssignCustomerProgramPlans(ctx.appRole)}
+            canViewProgramPlans={canViewCustomerProgramPlans(ctx.appRole)}
+            programPlans={programPlans}
             viewer={viewer}
             basePath={basePath}
           />

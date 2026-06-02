@@ -9,6 +9,7 @@ import {
   canManageOutletForBranchAdmin,
   getAuthDashboardContext,
 } from "@/services/auth.service";
+import { CUSTOMER_DEBUG_TEMP_PASSWORD } from "@/lib/auth/customer-provisioning";
 import { normalizeToE164 } from "@/lib/auth/phone-e164";
 import { isAdminConsoleRole } from "@/types/roles";
 import {
@@ -295,6 +296,7 @@ async function persistQuestionnaireBundle(
 
 /**
  * Phone-first Auth (OTP) + optional email; mirrors `docs/auth-by-role.md` and `role-sign-in-policy.ts`.
+ * Also sets {@link CUSTOMER_DEBUG_TEMP_PASSWORD} on Auth so the Flutter app can sign in with password during QA.
  * `gym_memberships.created_by` (+ legacy `onboarded_by`) = who onboarded; `profiles.created_by` = who provisioned Auth user (first patch).
  */
 async function executeOnboardMemberInsert(
@@ -443,6 +445,13 @@ async function executeOnboardMemberInsert(
       }
     }
 
+    const { error: authPasswordErr } = await service.auth.admin.updateUserById(existingProfile.id, {
+      password: CUSTOMER_DEBUG_TEMP_PASSWORD,
+    });
+    if (authPasswordErr) {
+      return { ok: false, error: authPasswordErr.message };
+    }
+
     const membershipResult = await upsertCustomerMembership(supabase, {
       profileId: existingProfile.id,
       outletId,
@@ -487,12 +496,14 @@ async function executeOnboardMemberInsert(
   const createAuthPayload: {
     phone: string;
     phone_confirm: boolean;
+    password: string;
     user_metadata: Record<string, string>;
     email?: string;
     email_confirm?: boolean;
   } = {
     phone: phoneNorm.e164,
     phone_confirm: true,
+    password: CUSTOMER_DEBUG_TEMP_PASSWORD,
     user_metadata: { full_name: fullName.length ? fullName : phoneNorm.e164 },
   };
   if (email.length > 0) {

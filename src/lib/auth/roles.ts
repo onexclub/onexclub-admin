@@ -188,6 +188,21 @@ export function canAssignDedicatedTrainer(role: UserRole): boolean {
   return role === ROLES.SUPERADMIN || role === ROLES.GYM_OWNER || role === ROLES.BRANCH_ADMIN || role === ROLES.RECEPTIONIST;
 }
 
+/** Match / rotate exercise + diet template assignments (`customer_plan_assignments`). */
+export function canAssignCustomerProgramPlans(role: UserRole): boolean {
+  return (
+    role === ROLES.SUPERADMIN ||
+    role === ROLES.GYM_OWNER ||
+    role === ROLES.BRANCH_ADMIN ||
+    role === ROLES.TRAINER
+  );
+}
+
+/** Read program assignments on the customer workspace (broader than assign — incl. reception). */
+export function canViewCustomerProgramPlans(role: UserRole): boolean {
+  return hasAccess(role, "customers", "read");
+}
+
 /** Match `/dashboard*` paths to coarse features — longest match wins inside middleware + nav builder. */
 export const dashboardRouteMatchers: { prefix: string; feature: DashboardFeature }[] = [
   { prefix: "/dashboard/staff", feature: "staff" },
