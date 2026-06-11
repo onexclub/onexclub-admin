@@ -4,7 +4,7 @@ export default function AdminPaymentsPlaceholderPage() {
   return (
     <EmptyState
       title="Payments"
-      description="Keep payment provider secrets on the server. Store ledger rows per outlet with RLS mirroring `gym_memberships` access rules."
+      description="Payment history and billing tools are coming soon."
     />
   );
 }

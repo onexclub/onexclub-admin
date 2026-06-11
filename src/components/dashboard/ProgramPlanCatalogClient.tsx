@@ -24,8 +24,10 @@ export function ProgramPlanCatalogClient(props: {
   defaultOutletId: string;
   title: string;
   description: string;
+  /** Optional per-template scope labels (superadmin org · branch context). */
+  scopeLabelByTemplateId?: Record<string, string>;
 }) {
-  const { planType, templates, defaultOutletId, title, description } = props;
+  const { planType, templates, defaultOutletId, title, description, scopeLabelByTemplateId } = props;
   const [detail, setDetail] = useState<ProgramPlanDetailSelection | null>(null);
   const [goalFilter, setGoalFilter] = useState<string>("all");
   const [tierFilter, setTierFilter] = useState<string>("all");
@@ -98,7 +100,7 @@ export function ProgramPlanCatalogClient(props: {
       {!templates.length ? (
         <EmptyState
           title="No templates yet"
-          description="Program templates for this branch will appear here once published in Supabase (`plan_templates`)."
+          description="Program templates for this location will appear here once they are published."
         />
       ) : !filtered.length ? (
         <EmptyState title="No matches" description="Try clearing the goal or tier filters." />
@@ -110,6 +112,7 @@ export function ProgramPlanCatalogClient(props: {
               mode="catalog"
               type={planType}
               template={template}
+              scopeDetail={scopeLabelByTemplateId?.[template.id]}
               onViewDetails={(t) => setDetail(templateToDetailSelection(t, defaultOutletId))}
             />
           ))}

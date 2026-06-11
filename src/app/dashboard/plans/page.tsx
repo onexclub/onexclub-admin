@@ -32,14 +32,18 @@ export default async function DashboardPlansPage() {
         <div>
           <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Membership plans</h2>
           <p className="mt-2 max-w-3xl text-sm text-zinc-600 dark:text-zinc-400">
-            Catalogue authoring reuses the SKU cards from `/admin/plans`; branch admins automatically land in read-only mode while gym owners + superadmins can publish changes (`MEMBERSHIP_CATALOG_EDITOR_ROLES` in `src/lib/auth/roles.ts`).
+            Create and manage the plans you offer members — pricing, benefits, and billing terms. Gym owners can add or
+            update plans; other staff can view them when helping members sign up.
           </p>
         </div>
 
         {!outlets?.length ? (
-          <EmptyState title="No managed branches" description="Scope at least one outlet before editing catalogue rows." />
+          <EmptyState
+            title="No branch assigned"
+            description="You need access to at least one branch before you can manage membership plans."
+          />
         ) : error ? (
-          <EmptyState title="Unable to load catalogue" description={error} />
+          <EmptyState title="Could not load plans" description={error} />
         ) : (
           <AdminMembershipPlansClient outlets={outlets ?? []} plans={rows ?? []} readOnly={readOnly} />
         )}

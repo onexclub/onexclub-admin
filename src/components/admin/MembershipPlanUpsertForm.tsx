@@ -64,12 +64,14 @@ export function MembershipPlanUpsertForm(props: {
             {isEdit ? `Edit “${draft.name}”` : "New membership plan"}
           </h3>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Saved rows power onboarding + renewal. Members linked through plan_id instantly inherit refreshed rules after you publish.
+            Changes apply to new sign-ups and renewals. Members already on this plan will see updated benefits and rules
+            after you save.
           </p>
           {isEdit ? (
             <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-500">
-              Branch locks to <span className="font-medium text-zinc-700 dark:text-zinc-300">{outlet?.name ?? "Outlet"}</span>
-              {outlet?.city ? ` (${outlet.city})` : ""} — relocating plans between outlets stays a database-only maneuver.
+              This plan belongs to{" "}
+              <span className="font-medium text-zinc-700 dark:text-zinc-300">{outlet?.name ?? "this branch"}</span>
+              {outlet?.city ? ` (${outlet.city})` : ""}.
             </p>
           ) : null}
         </div>
@@ -86,7 +88,7 @@ export function MembershipPlanUpsertForm(props: {
 
       {!isEdit ? (
         <label className="flex flex-col gap-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-          Outlet
+          Branch
           <select
             name="outlet_id"
             required
@@ -111,8 +113,8 @@ export function MembershipPlanUpsertForm(props: {
       </label>
 
       <label className="flex flex-col gap-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-        Description — marketing blurb surfaced in consumer apps / PDFs
-        <textarea name="description" rows={3} className={inputCn + " resize-y"} placeholder="Locker + PT sessions..." defaultValue={draft?.description ?? ""} />
+        Description — shown to staff and members
+        <textarea name="description" rows={3} className={inputCn + " resize-y"} placeholder="Locker access, PT sessions, and more…" defaultValue={draft?.description ?? ""} />
       </label>
 
       <div className="grid gap-3 sm:grid-cols-3">
@@ -134,7 +136,7 @@ export function MembershipPlanUpsertForm(props: {
           <input name="currency" defaultValue={draft?.currency ?? "INR"} maxLength={3} required className={inputCn} />
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-          Billing cadence
+          Billing cycle
           <select name="billing_cycle" className={inputCn} defaultValue={(draft?.billing_cycle as BillingCycleDb) ?? "monthly"}>
             {BILLING.map((b) => (
               <option key={b.value} value={b.value}>
@@ -146,7 +148,7 @@ export function MembershipPlanUpsertForm(props: {
       </div>
 
       <label className="flex flex-col gap-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-        Membership length (leave blank when contracts stay open-ended)
+        Membership length in days (leave blank for open-ended plans)
         <input
           name="duration_days"
           type="number"
@@ -160,11 +162,11 @@ export function MembershipPlanUpsertForm(props: {
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-          Carousel sort priority (lower first)
+          Display order (lower numbers appear first)
           <input name="display_order" type="number" defaultValue={draft?.display_order ?? 0} className={inputCn} />
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-          Accent color (CSS hex — matches member app cards)
+          Card accent color
           <input name="color_hex" className={inputCn} placeholder="#7F77DD" defaultValue={draft?.color_hex ?? ""} />
         </label>
       </div>
@@ -175,12 +177,12 @@ export function MembershipPlanUpsertForm(props: {
         </legend>
         <label className="mt-3 flex gap-3 text-sm text-zinc-700 dark:text-zinc-300">
           <input name="allow_cross_branch" type="checkbox" defaultChecked={draft?.allow_cross_branch ?? false} className="mt-1 shrink-0" />
-          Permit visits registered at sibling branches (`can_cross_branch_visit` honours this SKU).
+          Allow members to visit other branches on this plan.
         </label>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-xs font-medium text-zinc-700 dark:text-zinc-300">
-            Monthly / lifetime quota (digits, or unlimited)
+            Visit limit (number, or type unlimited)
             <input
               name="cross_branch_visits_allowed"
               className={inputCn}
@@ -191,22 +193,22 @@ export function MembershipPlanUpsertForm(props: {
             />
           </label>
           <label className="flex flex-col gap-1 text-xs font-medium text-zinc-700 dark:text-zinc-300">
-            Counter window
+            How often the limit resets
             <select name="cross_branch_quota_period" className={inputCn} defaultValue={draft?.cross_branch_quota_period ?? "monthly"}>
-              <option value="monthly">Monthly reset (UTC calendar month)</option>
-              <option value="total">Lifetime cap</option>
+              <option value="monthly">Resets every month</option>
+              <option value="total">Lifetime limit</option>
             </select>
           </label>
         </div>
 
         <label className="mt-4 flex gap-3 text-xs text-zinc-700 dark:text-zinc-300">
           <input name="cross_branch_org_only" type="checkbox" defaultChecked={draft?.cross_branch_org_only ?? true} className="mt-1 shrink-0" />
-          Keep cross-branch travel inside the organisation (same HQ / brand id).
+          Only allow visits to other branches in the same gym brand.
         </label>
       </fieldset>
 
       <label className="flex flex-col gap-1 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-        Custom perks bundle (JSON object — surfaced as checklist bullets member-side)
+        Extra perks (optional)
         <textarea
           name="features_json"
           rows={5}
@@ -215,7 +217,9 @@ export function MembershipPlanUpsertForm(props: {
           placeholder='{"locker_included":true,"freeze_allowed":true}'
           defaultValue={featuresDefault(draft)}
         />
-        <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">Use lowercase snake_case keys. Booleans flip into friendly perk labels automatically.</span>
+        <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400">
+          Add perks as key–value pairs. They appear as bullet points on the plan card.
+        </span>
       </label>
 
       {state.error ? (
@@ -234,7 +238,7 @@ export function MembershipPlanUpsertForm(props: {
         disabled={pending}
         className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-orange-600 px-6 text-sm font-semibold text-white shadow-md shadow-orange-600/25 transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:min-w-[200px]"
       >
-        {pending ? "Publishing…" : isEdit ? "Save changes" : "Publish new plan"}
+        {pending ? "Saving…" : isEdit ? "Save changes" : "Create plan"}
       </button>
     </form>
   );

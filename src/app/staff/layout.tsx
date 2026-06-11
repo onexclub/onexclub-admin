@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { getAuthDashboardContext } from "@/services/auth.service";
+import { loadAccountHeaderSummary } from "@/lib/account/current-user-profile";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isStaffConsoleRole } from "@/types/roles";
 import { ROUTES } from "@/utils/routes";
 
@@ -19,8 +21,11 @@ export default async function StaffLayout({ children }: { children: ReactNode })
     redirect(ROUTES.unauthorized);
   }
 
+  const supabase = await createServerSupabaseClient();
+  const account = await loadAccountHeaderSummary(supabase, ctx);
+
   return (
-    <DashboardShell title="Staff" subtitle="Operational tools" navItems={NAV} shellTheme="admin">
+    <DashboardShell title="Staff" subtitle="Operational tools" navItems={NAV} shellTheme="admin" account={account}>
       {children}
     </DashboardShell>
   );

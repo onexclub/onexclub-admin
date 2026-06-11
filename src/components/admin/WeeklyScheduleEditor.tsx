@@ -4,33 +4,38 @@
  * Controlled weekly hours editor — submits `schedule_json` (see `ScheduleFormPayload`).
  *
  * **Reuse:** Primary branch schedule + per-branch overrides in `GymSettingsPanels`.
- * **Why JSON:** Native `<input type="time">` fields inside client forms were not reliably
- * reaching Server Actions; controlled state + one hidden JSON field fixes persistence.
+ * **Why JSON:** Controlled state + one hidden JSON field — reliable save via Server Actions.
  */
 
 import { useMemo, useState } from "react";
+import { ScheduleTimeInput } from "@/components/admin/ScheduleTimeInput";
 import {
   buildScheduleFormPayload,
   copyMondayToDays,
+  EVENING_SHIFT_PRESETS,
   formatClosurePreview,
   HOURS_24_CLOSE,
   HOURS_24_OPEN,
+  MORNING_SHIFT_PRESETS,
+  normalizeTimeToHHmm,
   prefillWeeklyForEditor,
   weeklyToEditorRows,
   WEEKDAY_KEYS,
   WEEKDAY_LABELS,
   type DayScheduleRow,
   type OutletClosureEntry,
+  type ScheduleShiftPreset,
   type WeekdayKey,
 } from "@/lib/outlets/schedule";
 
 const inputClass =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none ring-orange-500/30 focus:border-orange-500 focus:ring-4 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50";
 
-const timeInputClass =
-  "w-full min-w-[7rem] rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-zinc-600 dark:bg-zinc-950 dark:text-zinc-100 dark:disabled:bg-zinc-900";
-
 const WEEKDAY_TARGETS = ["tue", "wed", "thu", "fri", "sat"] as const satisfies readonly WeekdayKey[];
+const QUICK_APPLY_DAYS: WeekdayKey[] = ["mon", ...WEEKDAY_TARGETS];
+
+const presetBtnClass =
+  "inline-flex h-8 items-center rounded-md border border-zinc-300 bg-white px-2.5 text-xs font-medium text-zinc-700 transition hover:border-orange-400 hover:bg-orange-50 hover:text-orange-800 dark:border-zinc-600 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:border-orange-500/50 dark:hover:bg-orange-950/30 dark:hover:text-orange-200";
 
 function cloneRows(rows: Record<WeekdayKey, DayScheduleRow>): Record<WeekdayKey, DayScheduleRow> {
   const next = {} as Record<WeekdayKey, DayScheduleRow>;
@@ -77,6 +82,50 @@ function emptyRow(): DayScheduleRow {
   return { closed: false, is24h: false, open: "", close: "", open2: "", close2: "" };
 }
 
+function setTime(
+  rows: Record<WeekdayKey, DayScheduleRow>,
+  day: WeekdayKey,
+  field: keyof Pick<DayScheduleRow, "open" | "close" | "open2" | "close2">,
+  raw: string,
+): Record<WeekdayKey, DayScheduleRow> {
+  const value = normalizeTimeToHHmm(raw);
+  return patchRow(rows, day, { [field]: value, closed: false, is24h: false } as Partial<DayScheduleRow>);
+}
+
+function applyMorningPreset(
+  rows: Record<WeekdayKey, DayScheduleRow>,
+  preset: ScheduleShiftPreset,
+  days: WeekdayKey[],
+): Record<WeekdayKey, DayScheduleRow> {
+  let next = rows;
+  for (const day of days) {
+    next = patchRow(next, day, {
+      closed: false,
+      is24h: false,
+      open: preset.open,
+      close: preset.close,
+    });
+  }
+  return next;
+}
+
+function applyEveningPreset(
+  rows: Record<WeekdayKey, DayScheduleRow>,
+  preset: ScheduleShiftPreset,
+  days: WeekdayKey[],
+): Record<WeekdayKey, DayScheduleRow> {
+  let next = rows;
+  for (const day of days) {
+    const current = next[day];
+    if (current.closed || current.is24h) continue;
+    next = patchRow(next, day, {
+      open2: preset.open,
+      close2: preset.close,
+    });
+  }
+  return next;
+}
+
 export function WeeklyScheduleEditor({
   initialWeekly,
   initialHolidaysText,
@@ -89,7 +138,6 @@ export function WeeklyScheduleEditor({
   initialHolidaysText: string;
   preservedWeekdayClosures: OutletClosureEntry[];
   formKey: string;
-  /** Prefill Mon–Sat 6–22 / Sun closed when DB has no rows yet. */
   useDefaultsWhenEmpty?: boolean;
   showCopyMondayTools?: boolean;
 }) {
@@ -117,10 +165,40 @@ export function WeeklyScheduleEditor({
       <input type="hidden" name="schedule_json" value={scheduleJson} readOnly />
 
       {showCopyMondayTools ? (
-        <div className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-3 dark:border-zinc-700 dark:bg-zinc-900/80">
+        <div className="flex flex-col gap-4 rounded-lg border border-zinc-200 bg-white px-3 py-3 dark:border-zinc-700 dark:bg-zinc-900/80">
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">Quick morning hours (Mon–Sat)</p>
+            <div className="flex flex-wrap gap-2">
+              {MORNING_SHIFT_PRESETS.map((preset) => (
+                <button
+                  key={`morning-${preset.label}`}
+                  type="button"
+                  onClick={() => setRows((prev) => applyMorningPreset(prev, preset, QUICK_APPLY_DAYS))}
+                  className={presetBtnClass}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">Quick evening session (Mon–Sat)</p>
+            <div className="flex flex-wrap gap-2">
+              {EVENING_SHIFT_PRESETS.map((preset) => (
+                <button
+                  key={`evening-${preset.label}`}
+                  type="button"
+                  onClick={() => setRows((prev) => applyEveningPreset(prev, preset, QUICK_APPLY_DAYS))}
+                  className={presetBtnClass}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <p className="text-xs text-zinc-600 dark:text-zinc-400">
-            Most gyms share the same hours Mon–Sat. Set <span className="font-medium">Monday</span> first, then copy
-            below. Adjust <span className="font-medium">Sunday</span> separately — often closed or morning-only.
+            Most gyms share the same hours Mon–Sat. Use a quick preset above, fine-tune in the table (hour 1–12, then
+            AM/PM), or set <span className="font-medium">Monday</span> and copy below.
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -203,43 +281,47 @@ export function WeeklyScheduleEditor({
                     />
                   </td>
                   <td className="px-3 py-2">
-                    <input
-                      type="time"
-                      step={60}
-                      value={row.is24h ? HOURS_24_OPEN : row.open}
-                      disabled={timesDisabled}
-                      onChange={(e) => setRows((prev) => patchRow(prev, day, { open: e.target.value, closed: false, is24h: false }))}
-                      className={timeInputClass}
-                    />
+                    {row.is24h ? (
+                      <span className="text-xs text-zinc-500">—</span>
+                    ) : (
+                      <ScheduleTimeInput
+                        aria-label={`${WEEKDAY_LABELS[day]} morning opens`}
+                        value={row.open}
+                        disabled={timesDisabled}
+                        onChange={(open) => setRows((prev) => setTime(prev, day, "open", open))}
+                      />
+                    )}
                   </td>
                   <td className="px-3 py-2">
-                    <input
-                      type="time"
-                      step={60}
-                      value={row.is24h ? HOURS_24_CLOSE : row.close}
-                      disabled={timesDisabled}
-                      onChange={(e) => setRows((prev) => patchRow(prev, day, { close: e.target.value, closed: false, is24h: false }))}
-                      className={timeInputClass}
-                    />
+                    {row.is24h ? (
+                      <span className="text-xs text-zinc-500">—</span>
+                    ) : (
+                      <ScheduleTimeInput
+                        aria-label={`${WEEKDAY_LABELS[day]} morning closes`}
+                        value={row.close}
+                        disabled={timesDisabled}
+                        onChange={(close) => setRows((prev) => setTime(prev, day, "close", close))}
+                      />
+                    )}
                   </td>
                   <td className="px-3 py-2">
-                    <input
-                      type="time"
-                      step={60}
+                    <ScheduleTimeInput
+                      aria-label={`${WEEKDAY_LABELS[day]} evening opens`}
                       value={row.open2}
                       disabled={timesDisabled || row.is24h}
-                      onChange={(e) => setRows((prev) => patchRow(prev, day, { open2: e.target.value }))}
-                      className={timeInputClass}
+                      onChange={(open2) =>
+                        setRows((prev) => patchRow(prev, day, { open2: normalizeTimeToHHmm(open2) }))
+                      }
                     />
                   </td>
                   <td className="px-3 py-2">
-                    <input
-                      type="time"
-                      step={60}
+                    <ScheduleTimeInput
+                      aria-label={`${WEEKDAY_LABELS[day]} evening closes`}
                       value={row.close2}
                       disabled={timesDisabled || row.is24h}
-                      onChange={(e) => setRows((prev) => patchRow(prev, day, { close2: e.target.value }))}
-                      className={timeInputClass}
+                      onChange={(close2) =>
+                        setRows((prev) => patchRow(prev, day, { close2: normalizeTimeToHHmm(close2) }))
+                      }
                     />
                   </td>
                 </tr>

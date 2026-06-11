@@ -40,7 +40,7 @@ export default async function DashboardBranchesPage() {
         <div>
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Branches &amp; settings</h2>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Organisation branding, per-branch addresses, opening hours, and holiday closures.
+            Your gym brand, branch addresses, opening hours, and holiday closures.
           </p>
         </div>
 

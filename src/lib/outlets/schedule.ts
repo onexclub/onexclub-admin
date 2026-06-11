@@ -97,6 +97,109 @@ export function toTimeInputValue(raw: string | null | undefined): string {
   return isValidTimeHHmm(normalized) ? normalized : "";
 }
 
+export type Time12hParts = {
+  hour12: string;
+  minute: string;
+  period: "AM" | "PM";
+};
+
+/** Split 24h `HH:MM` into 12-hour picker parts (India-friendly UI). */
+export function parseHHmmTo12h(hhmm: string): Time12hParts | null {
+  const normalized = normalizeTimeToHHmm(hhmm);
+  if (!isValidTimeHHmm(normalized)) return null;
+  const [hStr, mStr] = normalized.split(":");
+  const h24 = parseInt(hStr!, 10);
+  const period: "AM" | "PM" = h24 >= 12 ? "PM" : "AM";
+  const hour12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return { hour12: String(hour12), minute: mStr!, period };
+}
+
+/** Combine 12-hour picker parts → 24h `HH:MM` for storage. */
+export function format12hPartsToHHmm(hour12: number, minute: number, period: "AM" | "PM"): string {
+  const h = Math.min(12, Math.max(1, Math.floor(hour12)));
+  const m = Math.min(59, Math.max(0, Math.floor(minute)));
+  let h24: number;
+  if (period === "AM") {
+    h24 = h === 12 ? 0 : h;
+  } else {
+    h24 = h === 12 ? 12 : h + 12;
+  }
+  return `${String(h24).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+/** Human label e.g. `6:00 AM` — used beside schedule pickers. */
+export function formatHHmmForDisplay(hhmm: string): string {
+  const parts = parseHHmmTo12h(hhmm);
+  if (!parts) return "—";
+  return `${parts.hour12}:${parts.minute} ${parts.period}`;
+}
+
+/** One-click shift preset for the weekly hours editor. Times are 24h `HH:MM`. */
+export type ScheduleShiftPreset = {
+  label: string;
+  open: string;
+  close: string;
+};
+
+/** Common morning blocks — `WeeklyScheduleEditor` quick picks (Mon–Sat). */
+export const MORNING_SHIFT_PRESETS: ScheduleShiftPreset[] = [
+  { label: "6 – 11 AM", open: "06:00", close: "11:00" },
+  { label: "6 – 10 AM", open: "06:00", close: "10:00" },
+  { label: "7 AM – 12 PM", open: "07:00", close: "12:00" },
+  { label: "5 – 10 AM", open: "05:00", close: "10:00" },
+];
+
+/** Common evening blocks — fills shift 2 (open2 / close2) on Mon–Sat. */
+export const EVENING_SHIFT_PRESETS: ScheduleShiftPreset[] = [
+  { label: "4 – 10 PM", open: "16:00", close: "22:00" },
+  { label: "5 – 9 PM", open: "17:00", close: "21:00" },
+  { label: "6 – 10 PM", open: "18:00", close: "22:00" },
+  { label: "5 – 11 PM", open: "17:00", close: "23:00" },
+];
+
+/** Restrict hour field while typing (12-hour clock: 1–12 only). */
+export function sanitizeHour12Input(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 2);
+  if (!digits) return "";
+  if (digits.length === 1) {
+    const n = parseInt(digits, 10);
+    if (n === 0) return "";
+    return digits;
+  }
+  const n = parseInt(digits, 10);
+  if (n < 1 || n > 12) return digits.slice(0, 1);
+  return digits;
+}
+
+/** Restrict minute field while typing (0–59). */
+export function sanitizeMinuteInput(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 2);
+  if (!digits) return "";
+  if (digits.length === 1) return digits;
+  const n = parseInt(digits, 10);
+  if (n > 59) return digits.slice(0, 1);
+  return digits;
+}
+
+export function isValidHour12Input(raw: string): boolean {
+  if (!raw.trim()) return true;
+  const n = parseInt(raw, 10);
+  return !Number.isNaN(n) && n >= 1 && n <= 12;
+}
+
+export function isValidMinuteInput(raw: string): boolean {
+  if (!raw.trim()) return true;
+  const n = parseInt(raw, 10);
+  return !Number.isNaN(n) && n >= 0 && n <= 59;
+}
+
+/** Pad minutes on blur; clamps invalid values. */
+export function normalizeMinuteInputOnBlur(raw: string): string {
+  if (!raw.trim()) return "";
+  const n = Math.min(59, Math.max(0, parseInt(raw, 10) || 0));
+  return String(n).padStart(2, "0");
+}
+
 /**
  * ISO date, optional `HH:MM–HH:MM` short hours, optional label.
  * Examples: `2026-01-26 Republic Day` | `2026-04-14 07:00-12:00 Baisakhi`

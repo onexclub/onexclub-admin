@@ -4,7 +4,7 @@ export default function AdminAttendancePlaceholderPage() {
   return (
     <EmptyState
       title="Attendance"
-      description="Connect check-in hardware or manual desk mode using the `check_ins` table. Staff already have a lightweight check-in example under `/staff/members`."
+      description="Attendance tracking is coming soon. Check-ins and visit history will appear here."
     />
   );
 }

@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { SidebarNav, type DashboardShellTheme, type DashboardSidebarRailBrand, type NavItem } from "@/components/layout/SidebarNav";
 import { SignOutButton } from "@/components/layout/SignOutButton";
+import { AccountHeaderLink } from "@/components/account/AccountHeaderLink";
+import type { AccountHeaderSummary } from "@/lib/account/current-user-profile";
 
 type DashboardShellProps = {
   title: string;
@@ -16,6 +18,8 @@ type DashboardShellProps = {
    * Sidebar masthead only. `{ kind: "gym" }` swaps the ONE X CLUB emblem for a gym-logo-only rail (see `/admin`).
    */
   railBrand?: DashboardSidebarRailBrand;
+  /** Signed-in user chip — links to `/dashboard/profile`. */
+  account?: AccountHeaderSummary | null;
 };
 
 /**
@@ -29,6 +33,7 @@ export function DashboardShell({
   children,
   shellTheme,
   railBrand = { kind: "platform" },
+  account = null,
 }: DashboardShellProps) {
   const shell =
     shellTheme === "superadmin"
@@ -48,11 +53,14 @@ export function DashboardShell({
       <SidebarNav items={navItems} shellTheme={shellTheme} railBrand={railBrand} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className={header}>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 pr-4">
             <h1 className="text-lg font-semibold">{title}</h1>
             {subtitle ? <p className={subtitleClass}>{subtitle}</p> : null}
           </div>
-          <SignOutButton shellTheme={shellTheme} />
+          <div className="flex shrink-0 items-center gap-2 self-center">
+            {account ? <AccountHeaderLink account={account} shellTheme={shellTheme} /> : null}
+            <SignOutButton shellTheme={shellTheme} />
+          </div>
         </header>
         <main className="flex-1 space-y-6 px-4 py-6 lg:px-8">{children}</main>
       </div>

@@ -1,5 +1,6 @@
 import { EmptyState } from "@/components/ui/EmptyState";
 
+/** Stub — hidden from superadmin nav until platform billing is needed. Re-add to `layout.tsx` NAV when ready. */
 export default function SuperadminSubscriptionsPage() {
   return (
     <EmptyState

@@ -91,10 +91,10 @@ export function AdminMembershipPlansClient(props: {
     <div className="space-y-10">
       <div className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-orange-500/25 bg-orange-500/10 p-5 dark:border-orange-500/35 dark:bg-orange-950/40">
         <div className="max-w-xl space-y-1">
-          <h3 className="text-base font-semibold text-orange-950 dark:text-orange-50">Shape how members perceive value</h3>
+          <h3 className="text-base font-semibold text-orange-950 dark:text-orange-50">Shape how members see your plans</h3>
           <p className="text-sm text-orange-900/85 dark:text-orange-100/80">
-            Showcase benefits up front — every card mirrors what marketing copy + onboarding inherit from the same SKU. Edit anytime; linked members observe the
-            behavioral rules immediately via plan_id relationships.
+            Highlight what each plan includes — the same details appear when staff onboard members. Update a plan anytime;
+            members already on that plan will see the latest benefits and rules.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -119,7 +119,7 @@ export function AdminMembershipPlansClient(props: {
             </>
           ) : (
             <p className="text-sm text-orange-900/80 dark:text-orange-100/80">
-              View-only access — ask a gym owner to publish catalogue changes.
+              View only — ask your gym owner to create or update plans.
             </p>
           )}
         </div>
@@ -142,17 +142,17 @@ export function AdminMembershipPlansClient(props: {
 
       {plans.length === 0 && !showEditor && !readOnly ? (
         <div className="rounded-3xl border border-dashed border-zinc-300 bg-zinc-50 p-12 text-center dark:border-zinc-700 dark:bg-zinc-900/70">
-          <p className="text-lg font-medium text-zinc-800 dark:text-zinc-100">Nothing published yet — start above</p>
+          <p className="text-lg font-medium text-zinc-800 dark:text-zinc-100">No plans yet — create your first one above</p>
           <p className="mx-auto mt-2 max-w-md text-sm text-zinc-600 dark:text-zinc-400">
-            Plans double as onboarding SKUs once members move through admin flows. Anchor each tier to a branch, then revisit this page anytime you want to remix
-            benefits.
+            Add a plan for each branch with clear pricing and benefits. Staff will pick from these when signing up new
+            members.
           </p>
           <button
             type="button"
             onClick={openCreate}
             className="mt-6 inline-flex rounded-xl bg-orange-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-orange-700"
           >
-            Open plan builder
+            Open plan editor
           </button>
         </div>
       ) : null}
@@ -232,7 +232,7 @@ function PlanCard(props: {
         </div>
 
         <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
-          {plan.description ?? "Tell the story behind this SKU — richer descriptions reinforce upgrades at the front desk."}
+          {plan.description ?? "Add a short description — it helps staff explain this plan at the front desk."}
         </p>
 
         <div className="mt-5 rounded-2xl bg-zinc-50 p-4 dark:bg-zinc-900/85">
@@ -284,12 +284,12 @@ function PlanCard(props: {
                   type="submit"
                   className="inline-flex h-full min-h-[42px] items-center justify-center rounded-xl border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
                 >
-                  {plan.is_active ? "Archive SKU" : "Restore SKU"}
+                  {plan.is_active ? "Archive plan" : "Restore plan"}
                 </button>
               </form>
             </>
           ) : (
-            <p className="text-xs text-zinc-500">Read-only — catalogue edits require a gym owner.</p>
+            <p className="text-xs text-zinc-500">View only — only gym owners can edit plans.</p>
           )}
         </div>
       </div>

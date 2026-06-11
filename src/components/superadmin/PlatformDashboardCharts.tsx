@@ -90,7 +90,7 @@ export function PlatformDashboardCharts({ orgMetrics, planTiers, topBranches, re
           <p className="mt-1 text-2xl font-semibold tabular-nums text-zinc-50">
             {report.avgMembersPerBranch.toFixed(1)}
           </p>
-          <p className="mt-1 text-xs text-zinc-400">Across all outlets</p>
+          <p className="mt-1 text-xs text-zinc-400">Across all branches</p>
         </div>
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Orgs without branches</p>
@@ -175,7 +175,7 @@ export function PlatformDashboardCharts({ orgMetrics, planTiers, topBranches, re
       </div>
 
       <div className="dashboard-rise dashboard-rise-delay-2 grid gap-4 min-[1100px]:grid-cols-2">
-        <ChartCard title="Branch footprint" subtitle="Top 12 organizations by outlet count">
+        <ChartCard title="Branch footprint" subtitle="Top 12 organizations by branch count">
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={byBranches} layout="vertical" margin={{ left: 4, right: 16, top: 8, bottom: 8 }}>
@@ -197,7 +197,7 @@ export function PlatformDashboardCharts({ orgMetrics, planTiers, topBranches, re
                     fontSize: "12px",
                   }}
                   labelFormatter={(_, payload) => (payload[0]?.payload?.name as string) ?? ""}
-                  formatter={(value) => [`${Number(value ?? 0)} branches`, "Outlets"]}
+                  formatter={(value) => [`${Number(value ?? 0)} branches`, "Branches"]}
                 />
                 <Bar dataKey="branches" name="Branches" fill={BAR_AMBER} radius={[0, 6, 6, 0]} animationDuration={900} />
               </BarChart>
@@ -205,7 +205,7 @@ export function PlatformDashboardCharts({ orgMetrics, planTiers, topBranches, re
           </div>
         </ChartCard>
 
-        <ChartCard title="Top branches by members" subtitle="Highest active membership · per outlet">
+        <ChartCard title="Top branches by members" subtitle="Highest active membership · per branch">
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={branchLeaders} layout="vertical" margin={{ left: 4, right: 16, top: 8, bottom: 8 }}>

@@ -13,8 +13,10 @@ export const ROUTES = {
   superadminOnboard: "/superadmin/onboard",
   /** All onboarded organizations (gym brands); branch detail lives under `/superadmin/gyms/[orgId]`. */
   superadminGyms: "/superadmin/gyms",
-  /** Cross-tenant roster: `gym_memberships` rows (one detail URL per membership / branch pair). */
+  /** Cross-tenant roster: one row per person; profile opens via primary `gym_memberships` id. */
   superadminCustomers: "/superadmin/customers",
+  /** Platform-wide diet + exercise program templates (`plan_templates`). */
+  superadminProgramPlans: "/superadmin/program-plans",
   /** New RBAC-aligned gym console (preferred). Historic `/admin` routes redirect via middleware. */
   dashboard: "/dashboard",
   dashboardStaff: "/dashboard/staff",
@@ -30,6 +32,8 @@ export const ROUTES = {
   dashboardPlans: "/dashboard/plans",
   dashboardDiet: "/dashboard/diet",
   dashboardExercise: "/dashboard/exercise",
+  /** Signed-in account — role, branch access, contact details. */
+  dashboardProfile: "/dashboard/profile",
   /** Legacy paths — redirects to `/dashboard/*` for backwards-compatible bookmarks. */
   admin: "/admin",
   adminMemberOnboard: "/admin/members/onboard",
@@ -48,6 +52,16 @@ export function dashboardCustomerMembershipPath(membershipId: string): string {
 /** Superadmin customer workspace (platform scope). */
 export function superadminCustomerMembershipPath(membershipId: string): string {
   return `${ROUTES.superadminCustomers}/${membershipId}`;
+}
+
+/** Superadmin gym brand detail page. */
+export function superadminGymOrganizationPath(orgId: string): string {
+  return `${ROUTES.superadminGyms}/${orgId}`;
+}
+
+/** Scrolls to a branch row on the gym detail page. */
+export function superadminGymBranchPath(orgId: string, branchId: string): string {
+  return `${ROUTES.superadminGyms}/${orgId}#branch-${branchId}`;
 }
 
 /** One teammate row (`staff_assignments.id`). Use with `revalidatePath`. */

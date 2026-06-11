@@ -2,9 +2,10 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { CustomerMembershipWorkspace } from "@/components/dashboard/CustomerMembershipWorkspace";
+import { CustomerGymHistoryPanel } from "@/components/superadmin/CustomerGymHistoryPanel";
 import type { OnboardingViewerContext } from "@/features/onboarding/types";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { formatMembershipTimestampUtcLabel, todayUtcIsoDate } from "@/lib/date-term";
+import { todayUtcIsoDate } from "@/lib/date-term";
 import { fetchMembershipPlansForOutlets, type MembershipPlanAdminRow } from "@/lib/admin/membership-plans-admin";
 import {
   ROLES,
@@ -14,6 +15,7 @@ import {
   canViewCustomerProgramPlans,
 } from "@/lib/auth/roles";
 import { fetchCustomerProgramPlans } from "@/lib/customers/customer-program-plans";
+import { fetchCustomerGymMembershipHistory } from "@/lib/superadmin/customer-gym-history";
 import { GYM_MEMBERSHIP_AUDIT_EMBEDS, mapGymMembershipAuditFromRow } from "@/lib/customers/membership-audit";
 import type { CustomerMembershipDetailMembership } from "@/lib/customers/membership-detail";
 import { listTrainersForOutlet } from "@/lib/admin/outlet-trainers";
@@ -21,7 +23,7 @@ import { PROFILE_CONTACT_AND_VITALS_SELECT } from "@/lib/profile/vitals";
 import { firstOrSelf, organizationFromOutlet, type OutletWithOrg } from "@/lib/superadmin/customers-membership-mapper";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getAuthDashboardContext } from "@/services/auth.service";
-import { ROUTES, superadminCustomerMembershipPath } from "@/utils/routes";
+import { ROUTES, superadminCustomerMembershipPath, superadminGymBranchPath, superadminGymOrganizationPath } from "@/utils/routes";
 
 /** Narrow shape for `.select(...)` joins — keeps TS happy when nested embeds widen Supabase inference to parser error types. */
 type RawMembershipDetailRow = {
@@ -127,28 +129,16 @@ export default async function SuperadminCustomerMembershipPage({
     intakeComplete: false,
   } as Awaited<ReturnType<typeof fetchCustomerProgramPlans>>;
 
+  let gymHistory: Awaited<ReturnType<typeof fetchCustomerGymMembershipHistory>> = [];
+
   try {
-    programPlans = await fetchCustomerProgramPlans(supabase, membership.profile_id, membership.outlet_id);
+    [programPlans, gymHistory] = await Promise.all([
+      fetchCustomerProgramPlans(supabase, membership.profile_id, membership.outlet_id),
+      fetchCustomerGymMembershipHistory(supabase, membership.profile_id),
+    ]);
   } catch (err) {
-    console.error("[customer-program-plans] fetch failed:", err);
+    console.error("[superadmin-customer] fetch failed:", err);
   }
-
-  const { data: membershipsForProfileRaw } = await supabase
-    .from("gym_memberships")
-    .select("id,status,joined_at,outlet:outlets(name,city,organization_id,organizations(name,slug))")
-    .eq("profile_id", membership.profile_id)
-    .eq("role", ROLES.CUSTOMER)
-    .is("deleted_at", null)
-    .order("joined_at", { ascending: false });
-
-  type SibRow = {
-    id: string;
-    status: string;
-    joined_at: string | null;
-    outlet: OutletWithOrg | OutletWithOrg[] | null | unknown;
-  };
-
-  const membershipsForProfile: SibRow[] = (membershipsForProfileRaw ?? []) as SibRow[];
 
   const viewer: OnboardingViewerContext = {
     role: ROLES.SUPERADMIN,
@@ -171,60 +161,38 @@ export default async function SuperadminCustomerMembershipPage({
         <span className="text-zinc-900 dark:text-zinc-100">{membership.profile?.full_name ?? "Member"}</span>
       </nav>
 
-      <section className="rounded-xl border border-amber-200/80 bg-amber-50/90 p-4 text-sm text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
-        <p className="font-semibold">Platform view</p>
-        <p className="mt-1 text-xs opacity-90">
-          You are viewing <span className="font-medium">{org?.name ?? "—"}</span>
-          {org?.slug ? (
+      <div>
+        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+          {membership.profile?.full_name ?? "Member"}
+        </h1>
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+          {outletNested?.organization_id && org?.name ? (
             <>
-              {" "}
-              (<span className="font-mono">{org.slug}</span>)
+              <Link
+                href={superadminGymOrganizationPath(outletNested.organization_id)}
+                className="text-orange-700 hover:underline dark:text-orange-400"
+              >
+                {org.name}
+              </Link>
+              {" · "}
             </>
-          ) : null}{" "}
-          — branch <span className="font-medium">{membership.outlet?.name ?? membership.outlet_id}</span>. Edits use the same server actions as gym dashboards and sync everywhere.
+          ) : (
+            <>{org?.name ?? "Gym"} · </>
+          )}
+          {outletNested?.organization_id ? (
+            <Link
+              href={superadminGymBranchPath(outletNested.organization_id, membership.outlet_id)}
+              className="text-orange-700 hover:underline dark:text-orange-400"
+            >
+              {membership.outlet?.name ?? "Branch"}
+            </Link>
+          ) : (
+            (membership.outlet?.name ?? "Branch")
+          )}
         </p>
-      </section>
+      </div>
 
-      <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/50">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Memberships for this person</h2>
-        <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-          Floating customers may hold one row per branch. Current row is highlighted.
-        </p>
-        {!membershipsForProfile.length ? (
-          <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">No membership rows returned.</p>
-        ) : (
-          <ul className="mt-4 divide-y divide-zinc-200 dark:divide-zinc-800">
-            {membershipsForProfile.map((row) => {
-              const o = firstOrSelf(row.outlet as OutletWithOrg | OutletWithOrg[] | null);
-              const g = organizationFromOutlet(o);
-              const isCurrent = row.id === membershipId;
-              return (
-                <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
-                  <div>
-                    <p className="font-medium text-zinc-900 dark:text-zinc-50">{o?.name ?? "Branch"}</p>
-                    <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                      {g?.name ?? "—"} · {row.status}
-                      {row.joined_at ? ` · joined ${formatMembershipTimestampUtcLabel(row.joined_at)}` : ""}
-                    </p>
-                  </div>
-                  {isCurrent ? (
-                    <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-900 dark:bg-orange-950/80 dark:text-orange-100">
-                      Viewing
-                    </span>
-                  ) : (
-                    <Link
-                      href={superadminCustomerMembershipPath(row.id)}
-                      className="rounded-lg border border-zinc-300 px-3 py-1 text-xs font-semibold hover:bg-zinc-50 dark:border-zinc-600 dark:hover:bg-zinc-900"
-                    >
-                      Open
-                    </Link>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+      <CustomerGymHistoryPanel rows={gymHistory} currentMembershipId={membershipId} />
 
       <Suspense fallback={<p className="text-sm text-zinc-500">Loading profile…</p>}>
         <CustomerMembershipWorkspace

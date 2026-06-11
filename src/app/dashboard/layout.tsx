@@ -4,7 +4,9 @@ import { RoleGuard } from "@/components/auth/RoleGuard";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import { buildSidebarNavItemsFromPermissions } from "@/components/layout/Sidebar";
-import { loadGymOrganizationForAdminDashboard } from "@/lib/admin/gym-organization-dashboard";
+import { loadGymOrganizationForAdminDashboard, loadManagedOutletsForAdmin } from "@/lib/admin/gym-organization-dashboard";
+import { gymDashboardShellSubtitle } from "@/lib/admin/gym-dashboard-data";
+import { loadAccountHeaderSummary } from "@/lib/account/current-user-profile";
 import { dashboardSidebarItems, DASHBOARD_ENTRY_ROLES, ROLES } from "@/lib/auth/roles";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getAuthDashboardContext } from "@/services/auth.service";
@@ -29,6 +31,8 @@ export default async function DashboardRootLayout({ children }: { children: Reac
 
   const supabase = await createServerSupabaseClient();
   const gymOrg = await loadGymOrganizationForAdminDashboard(supabase, ctx);
+  const managedBranches = await loadManagedOutletsForAdmin(supabase, ctx);
+  const account = await loadAccountHeaderSummary(supabase, ctx);
 
   const navItems =
     ctx.appRole === ROLES.SUPERADMIN
@@ -41,8 +45,8 @@ export default async function DashboardRootLayout({ children }: { children: Reac
   return (
     <RoleGuard role={ctx.appRole} feature="dashboard">
       <DashboardShell
-        title="Gym dashboard"
-        subtitle="Role-aware console scoped to branches you operate."
+        title="Gym overview"
+        subtitle={gymDashboardShellSubtitle(managedBranches.length)}
         navItems={navItems}
         shellTheme="superadmin"
         railBrand={{
@@ -51,6 +55,7 @@ export default async function DashboardRootLayout({ children }: { children: Reac
           logoUrl: gymOrg?.logo_url ?? null,
           profileHref: ROUTES.dashboardBranches,
         }}
+        account={account}
       >
         <QueryProvider>{children}</QueryProvider>
       </DashboardShell>

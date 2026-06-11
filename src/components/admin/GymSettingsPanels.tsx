@@ -375,7 +375,7 @@ function OutletScheduleForm({
           {scheduleRole === "primary" ? (
             <>
               Set the gym&apos;s weekly timetable here. With multiple branches, you can apply the same hours to all
-              locations on save. Stored in <span className="font-mono">outlet_hours</span>.
+              locations on save.
             </>
           ) : (
             <>Overrides the primary branch schedule for this location only.</>

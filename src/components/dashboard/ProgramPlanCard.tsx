@@ -26,6 +26,8 @@ export type ProgramPlanCardProps =
       mode: "catalog";
       type: "exercise" | "diet";
       template: ProgramPlanTemplateListItem;
+      /** Optional override for the Scope stat (e.g. superadmin org · branch label). */
+      scopeDetail?: string;
       compact?: boolean;
       onViewDetails: (template: ProgramPlanTemplateListItem) => void;
     };
@@ -194,11 +196,14 @@ export function ProgramPlanCard(props: ProgramPlanCardProps) {
               {formatTemplateScoreBand(props.template) ? (
                 <Stat label="Intake score" value={formatTemplateScoreBand(props.template)!} className="col-span-2" />
               ) : null}
-              {props.template.outlet_id ? (
-                <Stat label="Scope" value="Branch template" className="col-span-2" />
-              ) : (
-                <Stat label="Scope" value="Platform-wide" className="col-span-2" />
-              )}
+              <Stat
+                label="Scope"
+                value={
+                  props.scopeDetail ??
+                  (props.template.outlet_id ? "Branch template" : "Platform-wide")
+                }
+                className="col-span-2"
+              />
             </dl>
           ) : null}
 

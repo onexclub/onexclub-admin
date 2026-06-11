@@ -34,7 +34,7 @@ export function MembershipAssignPlanPanel(props: Props) {
     <div className="rounded-lg border border-zinc-200 bg-zinc-50/70 p-3 text-xs shadow-inner dark:border-zinc-700 dark:bg-zinc-950/40">
       <p className="font-semibold text-zinc-800 dark:text-zinc-100">Renew / attach plan ({profileLabel})</p>
       <p className="mt-1 text-zinc-600 dark:text-zinc-400">
-        Outlet: <span className="font-medium text-zinc-800 dark:text-zinc-100">{outletDisplay}</span> • Status{" "}
+        Branch: <span className="font-medium text-zinc-800 dark:text-zinc-100">{outletDisplay}</span> • Status{" "}
         <span className="font-mono">{status}</span>
       </p>
 

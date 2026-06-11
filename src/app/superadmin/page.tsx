@@ -36,8 +36,7 @@ export default async function SuperadminHomePage() {
       <div className="dashboard-rise">
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Platform dashboard</h2>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Live view of gym brands, branches (<code className="rounded bg-zinc-100 px-1 text-xs dark:bg-zinc-800">outlets</code>
-          ), and active memberships — with trends and distribution charts below.
+          Live view of gym brands, branches, and active memberships — with trends and distribution charts below.
         </p>
       </div>
 
@@ -46,7 +45,7 @@ export default async function SuperadminHomePage() {
           <StatCard label="Organizations" value={orgCount ?? 0} hint="Gym brands / tenants" />
         </div>
         <div className="dashboard-rise dashboard-rise-delay-1">
-          <StatCard label="Branches" value={branchCount ?? 0} hint="Locations (outlets)" />
+          <StatCard label="Branches" value={branchCount ?? 0} hint="Gym locations" />
         </div>
         <div className="dashboard-rise dashboard-rise-delay-2">
           <StatCard label="Active memberships" value={memberCount ?? 0} hint="Across all branches" />
