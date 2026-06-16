@@ -26,6 +26,7 @@ import { PROFILE_GENDER_OPTIONS } from "@/lib/profile/vitals";
 import { todayUtcIsoDate } from "@/lib/date-term";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { effectiveManagedOutletIds, getAuthDashboardContext } from "@/services/auth.service";
+import { resolveActiveBranchSession, activeBranchOutletFilter } from "@/lib/auth/active-branch-session";
 import { isAdminConsoleRole } from "@/types/roles";
 import { ROUTES } from "@/utils/routes";
 
@@ -114,10 +115,11 @@ export default async function DashboardCustomersPage({
   const sp = await searchParams;
   const ctx = await getAuthDashboardContext();
   const supabase = await createServerSupabaseClient();
+  const branchSession = await resolveActiveBranchSession(ctx);
 
   const outletIds = effectiveManagedOutletIds(ctx);
   const q = (sp.q ?? "").trim().toLowerCase();
-  const outletFilter = (sp.outlet ?? "").trim();
+  const outletFilter = activeBranchOutletFilter(branchSession, sp.outlet ?? "");
   const planFilter = (sp.plan ?? "").trim();
   const genderFilter = (sp.gender ?? "").trim();
   const statusFilter = (sp.status ?? "").trim();

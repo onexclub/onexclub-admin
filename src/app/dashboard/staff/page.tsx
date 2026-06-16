@@ -20,6 +20,7 @@ import { ASSIGNABLE_ROLES, canManageStaffAssignments, ROLE_META, ROLES, type Use
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { effectiveManagedOutletIds, getAuthDashboardContext } from "@/services/auth.service";
+import { activeBranchOutletFilter, resolveActiveBranchSession } from "@/lib/auth/active-branch-session";
 import { ROUTES, dashboardStaffAssignmentPath } from "@/utils/routes";
 
 const FEATURE: DashboardFeature = "staff";
@@ -39,10 +40,11 @@ export default async function DashboardStaffPage({
   const sp = await searchParams;
   const ctx = await getAuthDashboardContext();
   const supabase = await createServerSupabaseClient();
+  const branchSession = await resolveActiveBranchSession(ctx);
 
   const outletIds = effectiveManagedOutletIds(ctx);
   const q = (sp.q ?? "").trim().toLowerCase();
-  const outletFilter = (sp.outlet ?? "").trim();
+  const outletFilter = activeBranchOutletFilter(branchSession, sp.outlet ?? "");
   const roleFilter = (sp.role ?? "").trim();
 
   let outlets: OutletOption[] = [];

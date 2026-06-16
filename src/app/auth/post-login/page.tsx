@@ -1,15 +1,16 @@
 import { redirect } from "next/navigation";
+import { resolvePostLoginRedirect } from "@/lib/auth/active-branch-session";
 import { getAuthDashboardContext } from "@/services/auth.service";
-import { homePathForRole, ROUTES } from "@/utils/routes";
+import { ROUTES } from "@/utils/routes";
 
 /**
  * After email/password login we land here to pick the correct dashboard.
- * Keeps `loginAction` simple and centralizes role → route mapping.
+ * Gym admins with multiple branches are sent to `/auth/choose-branch` first.
  */
 export default async function PostLoginPage() {
   const ctx = await getAuthDashboardContext();
   if (!ctx.user) {
     redirect(ROUTES.login);
   }
-  redirect(homePathForRole(ctx.appRole));
+  redirect(await resolvePostLoginRedirect(ctx));
 }

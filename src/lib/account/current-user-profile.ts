@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ROLE_META, type UserRole } from "@/lib/auth/roles";
+import { ROLE_META, ROLES, type UserRole } from "@/lib/auth/roles";
 import { loadGymOrganizationForAdminDashboard } from "@/lib/admin/gym-organization-dashboard";
-import type { AuthDashboardContext } from "@/services/auth.service";
+import { effectiveManagedOutletIds, type AuthDashboardContext } from "@/services/auth.service";
 import { ROUTES } from "@/utils/routes";
 
 /**
@@ -114,6 +114,30 @@ export async function loadCurrentUserProfilePageData(
       isPrimary: r.is_primary,
     };
   });
+
+  /** Gym owners may manage org-wide outlets before every branch has an explicit assignment row. */
+  if (ctx.appRole === ROLES.GYM_OWNER) {
+    const managedIds = effectiveManagedOutletIds(ctx);
+    const seen = new Set(branchAssignments.map((b) => b.outletId));
+    const missingIds = managedIds.filter((id) => !seen.has(id));
+    if (missingIds.length) {
+      const { data: extraOutlets } = await supabase
+        .from("outlets")
+        .select("id,name,city")
+        .in("id", missingIds)
+        .is("deleted_at", null);
+      for (const o of extraOutlets ?? []) {
+        branchAssignments.push({
+          outletId: String(o.id),
+          outletName: (o.name as string | null) ?? "Branch",
+          city: (o.city as string | null) ?? null,
+          role: ROLES.GYM_OWNER,
+          roleLabel: formatStaffRoleLabel(ROLES.GYM_OWNER),
+          isPrimary: false,
+        });
+      }
+    }
+  }
 
   return {
     id: profile.id,

@@ -19,6 +19,7 @@ import { FormSectionCard } from "@/features/onboarding/components/FormSectionCar
 import { formatAnswerPreview } from "@/features/onboarding/format-answer-preview";
 import { useOnboardingFormsBundle } from "@/features/onboarding/hooks/useOnboardingForms";
 import { canEditOnboardingSection, canViewOnboardingSection } from "@/features/onboarding/permissions";
+import { filterDefinitionBundleForMember, filterQuestionDefinitions } from "@/features/onboarding/question-visibility";
 import type { OnboardingFormName, OnboardingViewerContext } from "@/features/onboarding/types";
 import type { MembershipPlanAdminRow } from "@/lib/admin/membership-plans-admin";
 import type { UserRole } from "@/lib/auth/roles";
@@ -597,6 +598,8 @@ function IntakeSectionPanel(props: {
   }
 
   const defs = mergedDefinitions?.[formName] ?? [];
+  const memberGender = membership.profile?.gender ?? null;
+  const applicableDefs = filterQuestionDefinitions(defs, { gender: memberGender });
   const answers = bundledResponses?.[formName]?.answers_json ?? {};
   const copy = SECTION_COPY[formName];
 
@@ -613,6 +616,7 @@ function IntakeSectionPanel(props: {
             title={copy.title}
             description={copy.description}
             definitions={defs}
+            memberGender={memberGender}
             bundledResponse={bundledResponses?.[formName] ?? null}
             viewer={viewer}
             outletId={membership.outlet_id}
@@ -645,8 +649,8 @@ function IntakeSectionPanel(props: {
           ) : null}
         </>
       ) : null}
-      {defs.length ? (
-        defs.map((def) => (
+      {applicableDefs.length ? (
+        applicableDefs.map((def) => (
           <ReviewRow
             key={def.id}
             label={def.label}
@@ -715,6 +719,10 @@ function ReviewTabContent(props: {
   const basicAnswers = bundledResponses?.basic_info?.answers_json ?? {};
   const healthAnswers = bundledResponses?.health_screening?.answers_json ?? {};
   const dietAnswers = bundledResponses?.diet_preferences?.answers_json ?? {};
+  const memberGender = membership.profile?.gender ?? null;
+  const applicableDefinitions = mergedDefinitions
+    ? filterDefinitionBundleForMember(mergedDefinitions, { gender: memberGender })
+    : undefined;
 
   const showTechnicalPlanIds = MEMBERSHIP_CATALOG_EDITOR_ROLES.includes(ctxRole as never);
 
@@ -764,7 +772,7 @@ function ReviewTabContent(props: {
               label="BMI"
               value={bmi != null ? `${formatBmi(bmi)}${bmiBand ? ` (${BMI_BAND_LABEL[bmiBand]})` : ""}` : "—"}
             />
-            {(mergedDefinitions?.basic_info ?? []).map((def) => (
+            {(applicableDefinitions?.basic_info ?? []).map((def) => (
               <ReviewRow
                 key={def.id}
                 label={def.label}
@@ -773,8 +781,8 @@ function ReviewTabContent(props: {
             ))}
           </ReviewCard>
           <ReviewCard title={SECTION_COPY.health_screening.title}>
-            {(mergedDefinitions?.health_screening ?? []).length ? (
-              mergedDefinitions!.health_screening.map((def) => (
+            {(applicableDefinitions?.health_screening ?? []).length ? (
+              applicableDefinitions!.health_screening.map((def) => (
                 <ReviewRow
                   key={def.id}
                   label={def.label}
@@ -787,8 +795,8 @@ function ReviewTabContent(props: {
           </ReviewCard>
           <ReviewCard title={SECTION_COPY.diet_preferences.title} className="sm:col-span-2">
             <div className="grid gap-x-6 sm:grid-cols-2">
-              {(mergedDefinitions?.diet_preferences ?? []).length ? (
-                mergedDefinitions!.diet_preferences.map((def) => (
+              {(applicableDefinitions?.diet_preferences ?? []).length ? (
+                applicableDefinitions!.diet_preferences.map((def) => (
                   <ReviewRow
                     key={def.id}
                     label={def.label}

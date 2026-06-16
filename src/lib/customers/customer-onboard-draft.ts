@@ -1,5 +1,10 @@
 import { buildAnswersDefaultValues } from "@/features/onboarding/components/onboarding-defaults";
 import { ONBOARDING_FORMS_IN_ORDER } from "@/features/onboarding/constants";
+import {
+  EMPTY_MEMBER_QUESTION_CONTEXT,
+  filterQuestionDefinitions,
+  type MemberQuestionContext,
+} from "@/features/onboarding/question-visibility";
 import type { OnboardingFormName, QuestionDefinition } from "@/features/onboarding/types";
 
 /**
@@ -269,12 +274,13 @@ export function summarizeCustomerOnboardDraft(
 export function buildQuestionnairePayload(
   definitions: Record<OnboardingFormName, QuestionDefinition[]> | undefined,
   answers: QuestionnaireAnswersBundle,
+  memberContext?: MemberQuestionContext,
 ): Record<string, Record<string, unknown>> {
   const payload: Record<string, Record<string, unknown>> = {};
   if (!definitions) return payload;
 
   for (const formName of ONBOARDING_FORMS_IN_ORDER) {
-    const defs = definitions[formName] ?? [];
+    const defs = filterQuestionDefinitions(definitions[formName] ?? [], memberContext ?? EMPTY_MEMBER_QUESTION_CONTEXT);
     if (!defs.length) continue;
     const merged = buildAnswersDefaultValues(defs, answers[formName] ?? {});
     const section: Record<string, unknown> = {};

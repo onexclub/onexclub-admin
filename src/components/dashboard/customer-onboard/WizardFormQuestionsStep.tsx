@@ -8,25 +8,30 @@ import { buildAnswersDefaultValues } from "@/features/onboarding/components/onbo
 import { computeSectionCompletion } from "@/features/onboarding/completion";
 import { SECTION_COPY } from "@/features/onboarding/constants";
 import { useOnboardingDefinitions } from "@/features/onboarding/hooks/useOnboardingForms";
+import { filterQuestionDefinitions } from "@/features/onboarding/question-visibility";
 import type { OnboardingFormName, QuestionDefinition } from "@/features/onboarding/types";
+import type { ProfileGender } from "@/lib/profile/vitals";
 import { cn } from "@/lib/utils/cn";
 
 /**
  * One wizard step = one `form_name` from `question_definitions`.
  *
  * **Moderation:** pass `headerSlot` on Basic Info for height/weight/BMI above DB questions.
+ * Pass `memberGender` so gender-specific prompts from `visibility_json` are filtered out.
  */
 export function WizardFormQuestionsStep(props: {
   outletId: string;
   formName: OnboardingFormName;
   answers: Record<string, unknown>;
   onSectionChange: (formName: OnboardingFormName, sectionAnswers: Record<string, unknown>) => void;
+  /** From Identity step / profile — drives `question_definitions.visibility_json`. */
+  memberGender?: ProfileGender | "" | null;
   headerSlot?: ReactNode;
 }) {
-  const { outletId, formName, answers, onSectionChange, headerSlot } = props;
+  const { outletId, formName, answers, onSectionChange, memberGender, headerSlot } = props;
   const { data: definitions, isPending, error } = useOnboardingDefinitions(outletId);
   const copy = SECTION_COPY[formName];
-  const defs = definitions?.[formName] ?? [];
+  const defs = filterQuestionDefinitions(definitions?.[formName] ?? [], { gender: memberGender });
 
   if (error) {
     const msg = error instanceof Error ? error.message : "Unable to load intake questions.";

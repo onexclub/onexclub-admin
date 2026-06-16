@@ -72,8 +72,8 @@ export function GymOwnerManagementPanel({
         </p>
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
           Revokes every existing <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">gym_owner</code> row for this
-          org, then links the account below to all branches. Existing email → reuses profile; new email → requires a
-          temporary password.
+          org, then links the account below to all branches. New email → requires a temporary password. Existing email →
+          optional password resets their sign-in.
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-sm font-medium text-zinc-800 dark:text-zinc-100 sm:col-span-2">
@@ -92,7 +92,7 @@ export function GymOwnerManagementPanel({
               minLength={8}
               autoComplete="new-password"
               className={inputClass}
-              placeholder="Required only for a brand-new Auth user"
+              placeholder="Required for new email; optional to reset an existing owner’s sign-in"
             />
           </label>
         </div>

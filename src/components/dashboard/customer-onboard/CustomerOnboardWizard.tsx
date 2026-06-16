@@ -37,6 +37,10 @@ import { ONBOARDING_FORM, SECTION_COPY } from "@/features/onboarding/constants";
 import { formatAnswerPreview } from "@/features/onboarding/format-answer-preview";
 import { useOnboardingDefinitions } from "@/features/onboarding/hooks/useOnboardingForms";
 import {
+  filterDefinitionBundleForMember,
+  type MemberQuestionContext,
+} from "@/features/onboarding/question-visibility";
+import {
   validateQuestionnaireSection,
 } from "@/features/onboarding/validate-questionnaire-answers";
 import { computeBmiFromMetrics, genderLabel } from "@/lib/profile/vitals";
@@ -106,13 +110,19 @@ export function CustomerOnboardWizard(props: {
   ctxRole: UserRole;
   /** Outlet → coaches for Review-step assignment (`listTrainersGroupedByOutlet`). */
   trainersByOutlet: Record<string, TrainerLite[]>;
+  /** Working branch from header switcher / post-login chooser; falls back to first outlet. */
+  preferredOutletId?: string | null;
 }) {
-  const { outlets, plans: allPlans, defaultStartDate, actorProfileId, ctxRole, trainersByOutlet } = props;
+  const { outlets, plans: allPlans, defaultStartDate, actorProfileId, ctxRole, trainersByOutlet, preferredOutletId } =
+    props;
   const router = useRouter();
   const searchParams = useSearchParams();
   const contactCopy = customerMemberContactCopy();
   const storageKey = draftStorageKey(actorProfileId);
-  const defaultOutletId = outlets[0]?.id ?? "";
+  const defaultOutletId =
+    (preferredOutletId && outlets.some((o) => o.id === preferredOutletId) ? preferredOutletId : null) ??
+    outlets[0]?.id ??
+    "";
 
   const staffOrganizationIds = useMemo(
     () => [...new Set(outlets.map((o) => o.organization_id).filter(Boolean))],
@@ -138,6 +148,16 @@ export function CustomerOnboardWizard(props: {
 
   const { data: questionDefinitions, isPending: definitionsLoading } = useOnboardingDefinitions(
     draft.membership.outletId || null,
+  );
+
+  const memberQuestionContext = useMemo<MemberQuestionContext>(
+    () => ({ gender: draft.identity.gender || null }),
+    [draft.identity.gender],
+  );
+
+  const applicableQuestionDefinitions = useMemo(
+    () => (questionDefinitions ? filterDefinitionBundleForMember(questionDefinitions, memberQuestionContext) : undefined),
+    [questionDefinitions, memberQuestionContext],
   );
 
   const [state, formAction, pending] = useActionState(onboardMemberWizardAction, initialWizard);
@@ -276,20 +296,26 @@ export function CustomerOnboardWizard(props: {
           questionDefinitions,
           INTAKE_STEP_FORM[2],
           draft.questionnaireAnswers,
+          memberQuestionContext,
         );
       }
       case 3:
       case 4: {
         if (!questionDefinitions || definitionsLoading) return false;
         const formName = INTAKE_STEP_FORM[draft.step];
-        return validateQuestionnaireSection(questionDefinitions, formName, draft.questionnaireAnswers);
+        return validateQuestionnaireSection(
+          questionDefinitions,
+          formName,
+          draft.questionnaireAnswers,
+          memberQuestionContext,
+        );
       }
       case 5:
         return true;
       default:
         return false;
     }
-  }, [draft, questionDefinitions, definitionsLoading]);
+  }, [draft, questionDefinitions, definitionsLoading, memberQuestionContext]);
 
   const handleSaveDraftClick = () => {
     const savedAt = new Date().toISOString();
@@ -405,7 +431,14 @@ export function CustomerOnboardWizard(props: {
       return;
     }
     if (formName && questionDefinitions) {
-      if (!validateQuestionnaireSection(questionDefinitions, formName, draft.questionnaireAnswers)) {
+      if (
+        !validateQuestionnaireSection(
+          questionDefinitions,
+          formName,
+          draft.questionnaireAnswers,
+          memberQuestionContext,
+        )
+      ) {
         setStepError(`Complete all required fields in “${SECTION_COPY[formName].title}”.`);
         return;
       }
@@ -691,6 +724,7 @@ export function CustomerOnboardWizard(props: {
               <WizardFormQuestionsStep
                 outletId={draft.membership.outletId}
                 formName={ONBOARDING_FORM.basic}
+                memberGender={draft.identity.gender}
                 answers={draft.questionnaireAnswers.basic_info ?? {}}
                 onSectionChange={onQuestionnaireSectionChange}
                 headerSlot={
@@ -753,6 +787,7 @@ export function CustomerOnboardWizard(props: {
               <WizardFormQuestionsStep
                 outletId={draft.membership.outletId}
                 formName={ONBOARDING_FORM.health}
+                memberGender={draft.identity.gender}
                 answers={draft.questionnaireAnswers.health_screening ?? {}}
                 onSectionChange={onQuestionnaireSectionChange}
               />
@@ -774,6 +809,7 @@ export function CustomerOnboardWizard(props: {
               <WizardFormQuestionsStep
                 outletId={draft.membership.outletId}
                 formName={ONBOARDING_FORM.diet}
+                memberGender={draft.identity.gender}
                 answers={draft.questionnaireAnswers.diet_preferences ?? {}}
                 onSectionChange={onQuestionnaireSectionChange}
               />
@@ -808,7 +844,13 @@ export function CustomerOnboardWizard(props: {
             <input
               type="hidden"
               name="questionnaire_payload_json"
-              value={JSON.stringify(buildQuestionnairePayload(questionDefinitions, draft.questionnaireAnswers))}
+              value={JSON.stringify(
+                buildQuestionnairePayload(
+                  questionDefinitions,
+                  draft.questionnaireAnswers,
+                  memberQuestionContext,
+                ),
+              )}
             />
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -854,7 +896,7 @@ export function CustomerOnboardWizard(props: {
                   <ReviewRow label="Height" value={draft.health.heightCm ? `${draft.health.heightCm} cm` : "—"} />
                   <ReviewRow label="Weight" value={draft.health.weightKg ? `${draft.health.weightKg} kg` : "—"} />
                   <ReviewRow label="BMI" value={bmi != null ? `${bmi.toFixed(1)} (${bmiBand ? BMI_BAND_LABEL[bmiBand] : "—"})` : "—"} />
-                  {(questionDefinitions?.basic_info ?? []).map((def) => (
+                  {(applicableQuestionDefinitions?.basic_info ?? []).map((def) => (
                     <ReviewRow
                       key={def.id}
                       label={def.label}
@@ -866,8 +908,8 @@ export function CustomerOnboardWizard(props: {
               <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
                 <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{SECTION_COPY.health_screening.title}</h3>
                 <dl className="mt-2">
-                  {(questionDefinitions?.health_screening ?? []).length ? (
-                    questionDefinitions!.health_screening.map((def) => (
+                  {(applicableQuestionDefinitions?.health_screening ?? []).length ? (
+                    applicableQuestionDefinitions!.health_screening.map((def) => (
                       <ReviewRow
                         key={def.id}
                         label={def.label}
@@ -882,8 +924,8 @@ export function CustomerOnboardWizard(props: {
               <div className="rounded-xl border border-zinc-200 p-4 sm:col-span-2 dark:border-zinc-700">
                 <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{SECTION_COPY.diet_preferences.title}</h3>
                 <dl className="mt-2 grid gap-x-6 sm:grid-cols-2">
-                  {(questionDefinitions?.diet_preferences ?? []).length ? (
-                    questionDefinitions!.diet_preferences.map((def) => (
+                  {(applicableQuestionDefinitions?.diet_preferences ?? []).length ? (
+                    applicableQuestionDefinitions!.diet_preferences.map((def) => (
                       <ReviewRow
                         key={def.id}
                         label={def.label}

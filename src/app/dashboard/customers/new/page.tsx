@@ -8,6 +8,7 @@ import { fetchMembershipPlansForOutlets } from "@/lib/admin/membership-plans-adm
 import { listTrainersGroupedByOutlet } from "@/lib/admin/outlet-trainers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { effectiveManagedOutletIds, getAuthDashboardContext } from "@/services/auth.service";
+import { resolveActiveBranchSession } from "@/lib/auth/active-branch-session";
 import { isAdminConsoleRole } from "@/types/roles";
 
 const FEATURE: DashboardFeature = "customers";
@@ -16,6 +17,7 @@ const FEATURE: DashboardFeature = "customers";
 export default async function DashboardNewCustomerPage() {
   const ctx = await getAuthDashboardContext();
   const supabase = await createServerSupabaseClient();
+  const branchSession = await resolveActiveBranchSession(ctx);
   const adminOutletIds = effectiveManagedOutletIds(ctx);
 
   if (!ctx.user) {
@@ -83,6 +85,7 @@ export default async function DashboardNewCustomerPage() {
             actorProfileId={ctx.user.id}
             ctxRole={ctx.appRole}
             trainersByOutlet={trainersByOutlet}
+            preferredOutletId={branchSession.activeOutletId}
           />
         </Suspense>
       )}

@@ -3,6 +3,8 @@ import { ROLES, type UserRole, isGymAdminShellRole, isStaffConsoleRole } from "@
 export const ROUTES = {
   login: "/login",
   postLogin: "/auth/post-login",
+  /** Gym admins with multiple branches pick a working location before `/dashboard`. */
+  authChooseBranch: "/auth/choose-branch",
   forgotPassword: "/forgot-password",
   /** Supabase appends `code` (PKCE) or `token_hash` + `type` to this URL after email confirmation / recovery. */
   authCallback: "/auth/callback",

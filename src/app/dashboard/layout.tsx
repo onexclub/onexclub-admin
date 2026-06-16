@@ -7,6 +7,7 @@ import { buildSidebarNavItemsFromPermissions } from "@/components/layout/Sidebar
 import { loadGymOrganizationForAdminDashboard, loadManagedOutletsForAdmin } from "@/lib/admin/gym-organization-dashboard";
 import { gymDashboardShellSubtitle } from "@/lib/admin/gym-dashboard-data";
 import { loadAccountHeaderSummary } from "@/lib/account/current-user-profile";
+import { resolveActiveBranchSession } from "@/lib/auth/active-branch-session";
 import { dashboardSidebarItems, DASHBOARD_ENTRY_ROLES, ROLES } from "@/lib/auth/roles";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getAuthDashboardContext } from "@/services/auth.service";
@@ -30,9 +31,20 @@ export default async function DashboardRootLayout({ children }: { children: Reac
   }
 
   const supabase = await createServerSupabaseClient();
+  const branchSession = await resolveActiveBranchSession(ctx);
+
+  if (branchSession.requiresSelection) {
+    redirect(ROUTES.authChooseBranch);
+  }
+
   const gymOrg = await loadGymOrganizationForAdminDashboard(supabase, ctx);
   const managedBranches = await loadManagedOutletsForAdmin(supabase, ctx);
   const account = await loadAccountHeaderSummary(supabase, ctx);
+
+  const branchSwitcherOptions =
+    managedBranches.length > 1
+      ? managedBranches.map((b) => ({ id: b.id, name: b.name, city: b.city }))
+      : [];
 
   const navItems =
     ctx.appRole === ROLES.SUPERADMIN
@@ -56,6 +68,15 @@ export default async function DashboardRootLayout({ children }: { children: Reac
           profileHref: ROUTES.dashboardBranches,
         }}
         account={account}
+        branchSwitcher={
+          branchSwitcherOptions.length > 1
+            ? {
+                branches: branchSwitcherOptions,
+                activeOutletId: branchSession.activeOutletId,
+                scope: branchSession.scope,
+              }
+            : null
+        }
       >
         <QueryProvider>{children}</QueryProvider>
       </DashboardShell>

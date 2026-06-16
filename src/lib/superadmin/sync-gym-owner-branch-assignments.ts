@@ -56,35 +56,26 @@ export async function syncGymOwnerAssignmentsForOutlet(
     return { ok: true };
   }
 
-  const { data: existing, error: existingErr } = await supabase
-    .from("staff_assignments")
-    .select("profile_id")
-    .eq("outlet_id", outletId)
-    .in("profile_id", ownerProfileIds);
+  /**
+   * Upsert (not insert-only): `reassignGymOwnerAction` revokes every org owner row first.
+   * A revoked `(profile_id, outlet_id)` row still satisfies UNIQUE — insert would fail or be
+   * skipped if we only check `profile_id` presence. Always clear `revoked_at` on sync.
+   */
+  for (const profile_id of ownerProfileIds) {
+    const { error: upsertErr } = await supabase.from("staff_assignments").upsert(
+      {
+        profile_id,
+        outlet_id: outletId,
+        role: ROLES.GYM_OWNER,
+        is_primary: false,
+        revoked_at: null,
+      },
+      { onConflict: "profile_id,outlet_id" },
+    );
 
-  if (existingErr) {
-    return { ok: false, message: existingErr.message };
-  }
-
-  const already = new Set((existing ?? []).map((r) => r.profile_id));
-  const toInsert = ownerProfileIds.filter((id) => !already.has(id));
-
-  if (!toInsert.length) {
-    return { ok: true };
-  }
-
-  const { error: insertErr } = await supabase.from("staff_assignments").insert(
-    toInsert.map((profile_id) => ({
-      profile_id,
-      outlet_id: outletId,
-      role: ROLES.GYM_OWNER,
-      /** First onboarded branch keeps the owner’s `is_primary: true` row; extra branches are linked, not “primary”. */
-      is_primary: false,
-    })),
-  );
-
-  if (insertErr) {
-    return { ok: false, message: insertErr.message };
+    if (upsertErr) {
+      return { ok: false, message: upsertErr.message };
+    }
   }
 
   return { ok: true };

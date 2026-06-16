@@ -2,7 +2,9 @@ import type { ReactNode } from "react";
 import { SidebarNav, type DashboardShellTheme, type DashboardSidebarRailBrand, type NavItem } from "@/components/layout/SidebarNav";
 import { SignOutButton } from "@/components/layout/SignOutButton";
 import { AccountHeaderLink } from "@/components/account/AccountHeaderLink";
+import { ActiveBranchSwitcher, type ActiveBranchSwitcherOption } from "@/components/layout/ActiveBranchSwitcher";
 import type { AccountHeaderSummary } from "@/lib/account/current-user-profile";
+import type { ActiveBranchScope } from "@/lib/auth/active-branch-session";
 
 type DashboardShellProps = {
   title: string;
@@ -20,6 +22,12 @@ type DashboardShellProps = {
   railBrand?: DashboardSidebarRailBrand;
   /** Signed-in user chip — links to `/dashboard/profile`. */
   account?: AccountHeaderSummary | null;
+  /** Multi-branch gym admins — same cookie as `/auth/choose-branch`. */
+  branchSwitcher?: {
+    branches: ActiveBranchSwitcherOption[];
+    activeOutletId: string | null;
+    scope: ActiveBranchScope;
+  } | null;
 };
 
 /**
@@ -34,6 +42,7 @@ export function DashboardShell({
   shellTheme,
   railBrand = { kind: "platform" },
   account = null,
+  branchSwitcher = null,
 }: DashboardShellProps) {
   const shell =
     shellTheme === "superadmin"
@@ -58,6 +67,14 @@ export function DashboardShell({
             {subtitle ? <p className={subtitleClass}>{subtitle}</p> : null}
           </div>
           <div className="flex shrink-0 items-center gap-2 self-center">
+            {branchSwitcher ? (
+              <ActiveBranchSwitcher
+                branches={branchSwitcher.branches}
+                activeOutletId={branchSwitcher.activeOutletId}
+                scope={branchSwitcher.scope}
+                shellTheme={shellTheme}
+              />
+            ) : null}
             {account ? <AccountHeaderLink account={account} shellTheme={shellTheme} /> : null}
             <SignOutButton shellTheme={shellTheme} />
           </div>

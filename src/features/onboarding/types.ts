@@ -1,4 +1,5 @@
 import type { UserRole } from "@/lib/auth/roles";
+import type { ProfileGender } from "@/lib/profile/vitals";
 
 /**
  * DB enum `question_input_type` — keep aligned with `012_onboarding_questionnaire.sql`.
@@ -9,6 +10,15 @@ export type QuestionInputTypeDb = "select" | "multiselect" | "boolean" | "text" 
 export type OnboardingFormName = "basic_info" | "health_screening" | "diet_preferences";
 
 export type QuestionOption = { value: string; label: string };
+
+/**
+ * Stored in `question_definitions.visibility_json`.
+ * Extend with more keys later (e.g. min_age) without breaking existing rows.
+ */
+export type QuestionVisibilityRules = {
+  /** When non-empty, only these profile genders see the prompt. */
+  genders?: ProfileGender[];
+};
 
 export type QuestionDefinition = {
   id: string;
@@ -24,6 +34,8 @@ export type QuestionDefinition = {
   display_order: number;
   editable_by_customer: boolean;
   validation_json: Record<string, unknown> | null;
+  /** Parsed from DB `visibility_json` — see {@link parseQuestionVisibility}. */
+  visibility_json: QuestionVisibilityRules | null;
 };
 
 export type QuestionsResponseRow = {

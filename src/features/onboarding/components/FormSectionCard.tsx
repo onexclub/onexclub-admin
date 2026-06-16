@@ -11,7 +11,9 @@ import { buildSectionAnswersSchema } from "@/features/onboarding/build-answers-s
 import { computeSectionCompletion } from "@/features/onboarding/completion";
 import { useUpsertOnboardingSectionMutation } from "@/features/onboarding/hooks/useOnboardingForms";
 import { canEditOnboardingSection, canViewOnboardingSection } from "@/features/onboarding/permissions";
+import { filterQuestionDefinitions } from "@/features/onboarding/question-visibility";
 import type { OnboardingFormName, OnboardingViewerContext, QuestionDefinition, QuestionsResponseRow } from "@/features/onboarding/types";
+import type { ProfileGender } from "@/lib/profile/vitals";
 
 import { cn } from "@/lib/utils/cn";
 
@@ -28,13 +30,19 @@ export function FormSectionCard(props: {
   bundledResponse?: QuestionsResponseRow | null;
   outletId: string | null;
   defaultOpen?: boolean;
+  /** Member profile gender — filters `visibility_json` rules before render/validation. */
+  memberGender?: ProfileGender | "" | null;
   /** `flat` — always expanded, no collapse chrome (customer profile edit tabs). */
   variant?: "collapsible" | "flat";
 }) {
-  const { formName, title, description, definitions, viewer, bundledResponse, outletId, defaultOpen, variant = "collapsible" } = props;
+  const { formName, title, description, definitions, viewer, bundledResponse, outletId, defaultOpen, memberGender, variant = "collapsible" } = props;
   const flat = variant === "flat";
   const [open, setOpen] = useState(flat || (defaultOpen ?? false));
   const [serverError, setServerError] = useState<string | null>(null);
+  const applicableDefinitions = useMemo(
+    () => filterQuestionDefinitions(definitions, { gender: memberGender }),
+    [definitions, memberGender],
+  );
   const canView = canViewOnboardingSection(viewer.role, formName);
   const sectionEditable = canEditOnboardingSection(viewer.role, formName);
   const sectionRoleLocked = !sectionEditable;
@@ -42,7 +50,10 @@ export function FormSectionCard(props: {
   const parsedExisting = bundledResponse?.answers_json ?? {};
   const answersSignature = JSON.stringify(parsedExisting);
 
-  const defaultValues = useMemo(() => buildAnswersDefaultValues(definitions, parsedExisting), [definitions, answersSignature]); // eslint-disable-line react-hooks/exhaustive-deps -- signature tracks JSON payload
+  const defaultValues = useMemo(
+    () => buildAnswersDefaultValues(applicableDefinitions, parsedExisting),
+    [applicableDefinitions, answersSignature],
+  ); // eslint-disable-line react-hooks/exhaustive-deps -- signature tracks JSON payload
 
   const form = useForm({
     defaultValues,
@@ -57,26 +68,33 @@ export function FormSectionCard(props: {
     control: form.control,
   }) as Record<string, unknown>;
 
-  const completion = useMemo(() => computeSectionCompletion(definitions, watched), [definitions, watched]);
+  const completion = useMemo(
+    () => computeSectionCompletion(applicableDefinitions, watched),
+    [applicableDefinitions, watched],
+  );
   const upsertMutation = useUpsertOnboardingSectionMutation(viewer.profileId, outletId);
 
   if (!canView) {
     return null;
   }
 
-  if (definitions.length === 0) {
+  if (applicableDefinitions.length === 0) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>{title}</CardTitle>
-          <CardDescription>No published questions configured for this section yet.</CardDescription>
+          <CardDescription>
+            {definitions.length
+              ? "No intake questions apply for this member’s profile (gender-based rules)."
+              : "No published questions configured for this section yet."}
+          </CardDescription>
         </CardHeader>
       </Card>
     );
   }
 
   const serializeErrors = (finalize: boolean) => {
-    const schema = buildSectionAnswersSchema(definitions, finalize);
+    const schema = buildSectionAnswersSchema(applicableDefinitions, finalize);
     const parsed = schema.safeParse(form.getValues());
     if (parsed.success) return { ok: true as const, data: parsed.data as Record<string, unknown> };
 
@@ -127,7 +145,7 @@ export function FormSectionCard(props: {
       ) : null}
       <FormProvider {...form}>
         <div className="grid gap-6">
-          {definitions.map((definition) => {
+          {applicableDefinitions.map((definition) => {
             const fieldDisabled =
               sectionRoleLocked || (viewer.isCustomerActor && !definition.editable_by_customer);
             return (

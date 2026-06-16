@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { mergeOutletQuestionDefinitions } from "./merge-question-definitions";
 import { ONBOARDING_FORMS_IN_ORDER } from "./constants";
+import { parseQuestionVisibility } from "./question-visibility";
 import type { OnboardingFormName, QuestionDefinition, QuestionInputTypeDb, QuestionOption } from "./types";
 
 /**
@@ -28,6 +29,7 @@ type RawQuestionRow = {
   display_order: number;
   editable_by_customer: boolean;
   validation_json?: unknown;
+  visibility_json?: unknown;
 };
 
 function normalizeOptions(raw: unknown): QuestionOption[] | null {
@@ -75,6 +77,7 @@ function mapRow(raw: RawQuestionRow): QuestionDefinition {
       raw.validation_json && typeof raw.validation_json === "object"
         ? (raw.validation_json as Record<string, unknown>)
         : null,
+    visibility_json: parseQuestionVisibility(raw.visibility_json),
   };
 }
 
@@ -84,7 +87,7 @@ export async function fetchMergedDefinitionsForOutlet(
 ): Promise<Record<OnboardingFormName, QuestionDefinition[]>> {
   const { data, error } = await supabase
     .from("question_definitions")
-    /** `*` keeps exports with extra-only columns (`hint`, `visible_to_customer`, ...) from breaking selects. */
+    /** `*` keeps exports with extra-only columns (`hint`, `visibility_json`, ...) from breaking selects. */
     .select("*")
     .in("form_name", ONBOARDING_FORMS_IN_ORDER)
     .eq("is_active", true)

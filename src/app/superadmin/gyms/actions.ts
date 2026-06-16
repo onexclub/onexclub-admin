@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { applyTemporaryAuthPassword } from "@/lib/auth/temporary-auth-password";
 import {
   imageBlobFromFormDataEntry,
   removeGymBrandLogoObjectsForOrganization,
@@ -323,17 +324,22 @@ export async function reassignGymOwnerAction(
 
   const primaryOutletId = outletIds[0]!;
 
-  const { data: existingProfile } = await admin.from("profiles").select("id,email").eq("email", ownerEmail).maybeSingle();
+  const { data: existingProfile } = await admin
+    .from("profiles")
+    .select("id,email")
+    .is("deleted_at", null)
+    .ilike("email", ownerEmail)
+    .maybeSingle();
 
   let profileId = existingProfile?.id as string | undefined;
 
   if (!profileId) {
-    if (!ownerPassword || ownerPassword.length < 8) {
+    if (!ownerPassword || ownerPassword.trim().length < 8) {
       return { error: "Temporary password (min 8 characters) is required when creating a new owner account." };
     }
     const { data: created, error: authError } = await admin.auth.admin.createUser({
       email: ownerEmail,
-      password: ownerPassword,
+      password: ownerPassword.trim(),
       email_confirm: true,
       user_metadata: { full_name: ownerFullName || ownerEmail },
     });
@@ -349,11 +355,19 @@ export async function reassignGymOwnerAction(
         ...auditActorOnUpdate(ctx.user.id),
       })
       .eq("id", profileId);
-  } else if (ownerFullName) {
-    await admin
-      .from("profiles")
-      .update({ full_name: ownerFullName, ...auditActorOnUpdate(ctx.user.id) })
-      .eq("id", profileId);
+  } else {
+    if (ownerFullName) {
+      await admin
+        .from("profiles")
+        .update({ full_name: ownerFullName, ...auditActorOnUpdate(ctx.user.id) })
+        .eq("id", profileId);
+    }
+    if (ownerPassword.trim()) {
+      const passwordResult = await applyTemporaryAuthPassword(admin, profileId, ownerPassword);
+      if (!passwordResult.ok) {
+        return { error: passwordResult.message };
+      }
+    }
   }
 
   const now = new Date().toISOString();
