@@ -43,7 +43,7 @@ import {
 import {
   validateQuestionnaireSection,
 } from "@/features/onboarding/validate-questionnaire-answers";
-import { computeBmiFromMetrics, genderLabel } from "@/lib/profile/vitals";
+import { computeBmiFromMetrics, genderLabel, MEMBER_INTAKE_GENDER_OPTIONS } from "@/lib/profile/vitals";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
 import { ReviewRow } from "@/components/dashboard/customer-onboard/ReviewRow";
@@ -604,19 +604,19 @@ export function CustomerOnboardWizard(props: {
             <div>
               <span className={labelCn}>Gender (required)</span>
               <div className="mt-2 grid grid-cols-3 gap-2">
-                {(["male", "female", "other"] as const).map((g) => (
+                {MEMBER_INTAKE_GENDER_OPTIONS.map((o) => (
                   <button
-                    key={g}
+                    key={o.value}
                     type="button"
-                    onClick={() => patchIdentity({ gender: g })}
+                    onClick={() => patchIdentity({ gender: o.value })}
                     className={cn(
-                      "rounded-xl border px-3 py-2.5 text-sm font-medium capitalize transition",
-                      draft.identity.gender === g
+                      "rounded-xl border px-3 py-2.5 text-sm font-medium transition",
+                      draft.identity.gender === o.value
                         ? selectedTileCn + " text-orange-800 dark:text-orange-200"
                         : "border-zinc-200 bg-zinc-50 text-zinc-700 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200",
                     )}
                   >
-                    {g === "other" ? "Other" : g.charAt(0).toUpperCase() + g.slice(1)}
+                    {o.label}
                   </button>
                 ))}
               </div>

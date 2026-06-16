@@ -1,4 +1,4 @@
-import { PROFILE_GENDER_OPTIONS, type ProfileVitalsSnapshot } from "@/lib/profile/vitals";
+import { MEMBER_INTAKE_GENDER_OPTIONS, type ProfileVitalsSnapshot } from "@/lib/profile/vitals";
 
 const fieldCn =
   "mt-1 w-full max-w-md rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950";
@@ -40,15 +40,24 @@ export function ProfileVitalsFields({ defaults, variant = "detail" }: Props) {
       </label>
 
       <label className={labelCn}>
-        Gender
-        <select name="gender" defaultValue={defaults?.gender ?? ""} className={inputCn}>
-          <option value="">Prefer not to answer yet</option>
-          {PROFILE_GENDER_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
+        Gender (required)
+        <div className="mt-2 grid grid-cols-3 gap-2">
+          {MEMBER_INTAKE_GENDER_OPTIONS.map((o) => (
+            <label
+              key={o.value}
+              className="flex cursor-pointer items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm font-medium text-zinc-700 has-[:checked]:border-orange-600 has-[:checked]:bg-orange-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:has-[:checked]:border-orange-500 dark:has-[:checked]:bg-orange-950/40"
+            >
+              <input
+                type="radio"
+                name="gender"
+                value={o.value}
+                defaultChecked={defaults?.gender === o.value}
+                className="sr-only"
+              />
               {o.label}
-            </option>
+            </label>
           ))}
-        </select>
+        </div>
       </label>
 
       <div className="grid gap-3 sm:grid-cols-2">

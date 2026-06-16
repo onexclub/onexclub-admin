@@ -5,6 +5,8 @@
  * `CustomerMembershipWorkspace`.
  */
 
+import { formatMembershipTimestampUtcLabel } from "@/lib/date-term";
+
 /** Matches Postgres `gender_type` enum in the Gym SaaS schema. */
 export const PROFILE_GENDER_OPTIONS = [
   { value: "male", label: "Male" },
@@ -12,6 +14,29 @@ export const PROFILE_GENDER_OPTIONS = [
   { value: "other", label: "Other" },
   { value: "prefer_not_to_say", label: "Prefer not to say" },
 ] as const;
+
+/**
+ * Member intake + identity edit — same three choices as the add-customer wizard.
+ * **Reuse:** `CustomerOnboardWizard`, `CustomerMembershipWorkspace` identity edit.
+ * Roster filters / admin views may still use full {@link PROFILE_GENDER_OPTIONS}.
+ */
+export const MEMBER_INTAKE_GENDER_OPTIONS = [
+  { value: "male", label: "Male" },
+  { value: "female", label: "Female" },
+  { value: "other", label: "Other" },
+] as const;
+
+export type MemberIntakeGender = (typeof MEMBER_INTAKE_GENDER_OPTIONS)[number]["value"];
+
+const MEMBER_INTAKE_GENDER_SET = new Set<string>(MEMBER_INTAKE_GENDER_OPTIONS.map((o) => o.value));
+
+/** Maps stored profile gender to intake/edit UI (legacy `prefer_not_to_say` → `other`). */
+export function genderForIntakeForm(value: string | null | undefined): MemberIntakeGender | "" {
+  if (!value) return "";
+  if (MEMBER_INTAKE_GENDER_SET.has(value)) return value as MemberIntakeGender;
+  if (value === "prefer_not_to_say") return "other";
+  return "";
+}
 
 export type ProfileGender = (typeof PROFILE_GENDER_OPTIONS)[number]["value"];
 
@@ -172,15 +197,9 @@ export function formatAgeAndGender(
   return parts.length ? parts.join(" · ") : "—";
 }
 
+/** Display label for `profiles.date_of_birth` (`YYYY-MM-DD`). SSR-safe — see `formatMembershipTimestampUtcLabel`. */
 export function formatDateOfBirth(value: string | null | undefined): string {
   if (!value) return "—";
-  try {
-    return new Date(`${value}T12:00:00.000Z`).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return value;
-  }
+  // Noon UTC anchor keeps the calendar day stable across timezones (same pattern as age helpers above).
+  return formatMembershipTimestampUtcLabel(`${value}T12:00:00.000Z`);
 }

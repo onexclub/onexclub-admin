@@ -16,7 +16,10 @@ import { auditActorOnUpdate } from "@/lib/supabase/audit-columns";
 import {
   contactTakenByOtherProfile,
   formatContactConflictError,
+  profileEmailUnchanged,
+  profilePhoneUnchanged,
 } from "@/lib/customers/customer-lookup";
+import { toUserFacingError } from "@/lib/errors/user-facing";
 import { normalizeToE164 } from "@/lib/auth/phone-e164";
 import { ROUTES, dashboardCustomerMembershipPath, superadminCustomerMembershipPath } from "@/utils/routes";
 
@@ -49,7 +52,7 @@ export async function assignMembershipPlanAction(
     .is("deleted_at", null)
     .maybeSingle();
 
-  if (memErr) return { error: memErr.message };
+  if (memErr) return { error: toUserFacingError(memErr, "Could not load membership.") };
   if (!membership?.outlet_id) return { error: "Membership not found." };
   if (!canManageOutletForBranchAdmin(ctx, membership.outlet_id)) return { error: "You cannot edit that membership." };
 
@@ -60,7 +63,7 @@ export async function assignMembershipPlanAction(
     .is("deleted_at", null)
     .maybeSingle();
 
-  if (planErr) return { error: planErr.message };
+  if (planErr) return { error: toUserFacingError(planErr, "Could not load plan.") };
   if (!plan || plan.outlet_id !== membership.outlet_id) return { error: "Plan does not belong to this outlet." };
   if (!plan.is_active) return { error: "That plan is archived; pick an active catalogue row or restore it." };
 
@@ -101,7 +104,7 @@ export async function assignMembershipPlanAction(
 
   const { error: updateErr } = await supabase.from("gym_memberships").update(patch).eq("id", membership.id);
 
-  if (updateErr) return { error: updateErr.message };
+  if (updateErr) return { error: toUserFacingError(updateErr, "Could not save plan.") };
 
   revalidatePath(ROUTES.adminCustomers);
   revalidatePath(ROUTES.dashboardCustomers);
@@ -143,12 +146,12 @@ export async function suspendMembershipAction(
     .is("deleted_at", null)
     .maybeSingle();
 
-  if (loadErr) return { error: loadErr.message };
+  if (loadErr) return { error: toUserFacingError(loadErr, "Could not load membership.") };
   if (!membership?.outlet_id) return { error: "Membership missing." };
   if (!canManageOutletForBranchAdmin(ctx, membership.outlet_id)) return { error: "Forbidden." };
 
   const { error } = await supabase.from("gym_memberships").update({ status: "suspended" }).eq("id", membershipId);
-  if (error) return { error: error.message };
+  if (error) return { error: toUserFacingError(error, "Could not suspend membership.") };
 
   revalidatePath(ROUTES.adminCustomers);
   revalidatePath(ROUTES.dashboardCustomers);
@@ -182,7 +185,7 @@ export async function assignTrainerToMembershipAction(
     .is("deleted_at", null)
     .maybeSingle();
 
-  if (loadErr) return { error: loadErr.message };
+  if (loadErr) return { error: toUserFacingError(loadErr, "Could not load membership.") };
   if (!membership?.outlet_id) return { error: "Membership missing." };
   if (!canManageOutletForBranchAdmin(ctx, membership.outlet_id)) return { error: "Forbidden." };
 
@@ -192,7 +195,7 @@ export async function assignTrainerToMembershipAction(
       : { assigned_trainer_id: trainerProfileId };
 
   const { error } = await supabase.from("gym_memberships").update(patch).eq("id", membershipId);
-  if (error) return { error: error.message };
+  if (error) return { error: toUserFacingError(error, "Could not update coach assignment.") };
 
   revalidatePath(ROUTES.adminCustomers);
   revalidatePath(ROUTES.dashboardCustomers);
@@ -243,6 +246,20 @@ export async function updateCustomerProfileAction(
 
   const service = createServiceRoleSupabaseClient();
 
+  const { data: existingProfile, error: existingErr } = await service
+    .from("profiles")
+    .select("phone, email")
+    .eq("id", profileId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (existingErr) {
+    return { error: toUserFacingError(existingErr, "Could not load member profile.") };
+  }
+  if (!existingProfile) {
+    return { error: "Member profile not found." };
+  }
+
   let phoneE164: string | null = null;
   if (phone.length > 0) {
     const phoneNorm = normalizeToE164(phone);
@@ -252,43 +269,46 @@ export async function updateCustomerProfileAction(
     phoneE164 = phoneNorm.e164;
   }
 
-  try {
-    const conflict = await contactTakenByOtherProfile(service, {
-      profileId,
-      phoneRaw: phoneE164 ?? undefined,
-      emailRaw: emailRaw.length > 0 ? emailRaw : undefined,
-    });
-    const conflictMsg = formatContactConflictError(conflict);
-    if (conflictMsg) {
-      return { error: conflictMsg };
+  const emailForDb = emailRaw.length > 0 ? emailRaw : null;
+  const phoneChanged = !profilePhoneUnchanged(existingProfile.phone, phoneE164);
+  const emailChanged = !profileEmailUnchanged(existingProfile.email, emailForDb);
+
+  if (phoneChanged || emailChanged) {
+    try {
+      const conflict = await contactTakenByOtherProfile(service, {
+        profileId,
+        phoneRaw: phoneChanged && phoneE164 ? phoneE164 : undefined,
+        emailRaw: emailChanged && emailForDb ? emailForDb : undefined,
+      });
+      const conflictMsg = formatContactConflictError(conflict);
+      if (conflictMsg) {
+        return { error: conflictMsg };
+      }
+    } catch (err) {
+      return {
+        error: toUserFacingError(err, "Could not validate contact details. Please try again."),
+      };
     }
-  } catch (err) {
-    return { error: err instanceof Error ? err.message : "Could not validate contact details." };
   }
 
-  const supabase = await createServerSupabaseClient();
-
-  const emailForDb = emailRaw.length > 0 ? emailRaw : null;
-
-  if (emailForDb) {
+  if (emailChanged && emailForDb) {
     const { error: authErr } = await service.auth.admin.updateUserById(profileId, {
       email: emailForDb,
       email_confirm: true,
     });
-    if (authErr) return { error: authErr.message };
+    if (authErr) return { error: toUserFacingError(authErr, "Could not update email on the login account.") };
   }
 
-  if (phoneE164) {
+  if (phoneChanged && phoneE164) {
     const { error: authPhoneErr } = await service.auth.admin.updateUserById(profileId, {
       phone: phoneE164,
       phone_confirm: true,
     });
-    if (authPhoneErr) return { error: authPhoneErr.message };
+    if (authPhoneErr) {
+      return { error: toUserFacingError(authPhoneErr, "Could not update mobile on the login account.") };
+    }
   }
 
-  // Service role after outlet guard — RLS `branch_front_updates_customer_profiles` only matches
-  // directly assigned outlets (`i_can_see_member`), so gym owners on other branches would get
-  // a silent zero-row update via the user-scoped client. Mirrors `dashboard/staff/actions.ts`.
   const { data: updated, error } = await service
     .from("profiles")
     .update({
@@ -302,7 +322,7 @@ export async function updateCustomerProfileAction(
     .select("id")
     .maybeSingle();
 
-  if (error) return { error: error.message };
+  if (error) return { error: toUserFacingError(error, "Could not save member details.") };
   if (!updated?.id) {
     return { error: "Could not save member details. Confirm this member belongs to your branch." };
   }

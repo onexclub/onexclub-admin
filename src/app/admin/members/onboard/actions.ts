@@ -32,6 +32,7 @@ import type { OnboardingFormName } from "@/features/onboarding/types";
 import { ROLES } from "@/lib/auth/roles";
 import { findExistingCustomer, contactTakenByOtherProfile, formatContactConflictError } from "@/lib/customers/customer-lookup";
 import type { ExistingCustomerLookupResult } from "@/lib/customers/customer-lookup";
+import { toUserFacingError } from "@/lib/errors/user-facing";
 import {
   loadExistingCustomerPrefill,
   type ExistingCustomerPrefill,
@@ -74,7 +75,7 @@ export async function lookupExistingCustomerAction(
     const result = await findExistingCustomer(service, { phone: phoneRaw, email: emailRaw });
     return { result };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Lookup failed." };
+    return { error: toUserFacingError(err, "Could not search for an existing member.") };
   }
 }
 
@@ -111,7 +112,7 @@ export async function loadExistingCustomerPrefillAction(
     const prefill = await loadExistingCustomerPrefill(service, profileId, gymHistory);
     return { prefill };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Could not load member details." };
+    return { error: toUserFacingError(err, "Could not load member details.") };
   }
 }
 

@@ -16,6 +16,7 @@ import type { OnboardingFormName, OnboardingViewerContext, QuestionDefinition, Q
 import type { ProfileGender } from "@/lib/profile/vitals";
 
 import { cn } from "@/lib/utils/cn";
+import { toUserFacingError } from "@/lib/errors/user-facing";
 
 import { CompletionBadge } from "./CompletionBadge";
 import { DynamicQuestionRenderer } from "./DynamicQuestionRenderer";
@@ -132,7 +133,7 @@ export function FormSectionCard(props: {
         previous: bundledResponse ?? null,
       });
     } catch (err: unknown) {
-      setServerError(err instanceof Error ? err.message : "Unable to save right now.");
+      setServerError(toUserFacingError(err, "Unable to save right now. Please try again."));
     }
   };
 

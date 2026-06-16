@@ -10,7 +10,8 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { normalizeToE164 } from "@/lib/auth/phone-e164";
+import { normalizeToE164, phoneDigitsForComparison } from "@/lib/auth/phone-e164";
+import { toUserFacingError } from "@/lib/errors/user-facing";
 import type { ProfileGender } from "@/lib/profile/vitals";
 
 export type CustomerGymHistoryEntry = {
@@ -124,7 +125,7 @@ export async function findExistingCustomer(
   });
 
   if (error) {
-    throw new Error(error.message);
+    throw new Error(toUserFacingError(error, "Could not search for an existing member."));
   }
 
   return parseLookupRpcPayload(data);
@@ -162,7 +163,7 @@ export async function contactTakenByOtherProfile(
       p_phone: normalized.e164,
       p_exclude_profile_id: input.profileId,
     });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(toUserFacingError(error, "Could not verify whether this mobile is available."));
     phoneTaken = Boolean(data);
   }
 
@@ -171,7 +172,7 @@ export async function contactTakenByOtherProfile(
       p_email: emailRaw,
       p_exclude_profile_id: input.profileId,
     });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(toUserFacingError(error, "Could not verify whether this email is available."));
     emailTaken = Boolean(data);
   }
 
@@ -190,6 +191,26 @@ export function formatContactConflictError(conflict: ContactConflict): string | 
     return "That email is already linked to another account.";
   }
   return null;
+}
+
+/** Compare stored vs submitted phone for duplicate-check skipping on vitals-only edits. */
+export function profilePhoneUnchanged(
+  existingPhone: string | null | undefined,
+  nextPhoneE164: string | null,
+): boolean {
+  if (!nextPhoneE164) return !existingPhone?.trim();
+  const existingNorm = existingPhone?.trim() ? normalizeToE164(existingPhone.trim()) : null;
+  if (existingNorm?.ok) return existingNorm.e164 === nextPhoneE164;
+  return phoneDigitsForComparison(existingPhone ?? "") === phoneDigitsForComparison(nextPhoneE164);
+}
+
+export function profileEmailUnchanged(
+  existingEmail: string | null | undefined,
+  nextEmail: string | null,
+): boolean {
+  const a = existingEmail?.trim().toLowerCase() ?? "";
+  const b = nextEmail?.trim().toLowerCase() ?? "";
+  return a === b;
 }
 
 export type SameOrganizationMembershipNotice = {

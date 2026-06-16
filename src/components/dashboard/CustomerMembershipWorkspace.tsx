@@ -49,7 +49,9 @@ import {
   formatDateOfBirth,
   formatHeightCm,
   formatWeightKg,
+  genderForIntakeForm,
   genderLabel,
+  MEMBER_INTAKE_GENDER_OPTIONS,
 } from "@/lib/profile/vitals";
 import { cn } from "@/lib/utils/cn";
 
@@ -389,14 +391,26 @@ function IdentityEditForm(props: {
         </label>
       </div>
       <label className="block">
-        <span className={labelCn}>Gender</span>
-        <select name="gender" className={inputCn} defaultValue={p?.gender ?? ""}>
-          <option value="">Prefer not to answer yet</option>
-          <option value="male">Male</option>
-          <option value="female">Female</option>
-          <option value="other">Other</option>
-          <option value="prefer_not_to_say">Prefer not to say</option>
-        </select>
+        <span className={labelCn}>Gender (required)</span>
+        <div className="mt-2 grid grid-cols-3 gap-2">
+          {MEMBER_INTAKE_GENDER_OPTIONS.map((o) => {
+            const selected = genderForIntakeForm(p?.gender) === o.value;
+            return (
+              <label
+                key={o.value}
+                className={cn(
+                  "cursor-pointer rounded-xl border px-3 py-2.5 text-center text-sm font-medium transition",
+                  selected
+                    ? "border-orange-600 bg-orange-50 text-orange-800 dark:border-orange-500 dark:bg-orange-950/40 dark:text-orange-200"
+                    : "border-zinc-200 bg-zinc-50 text-zinc-700 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200",
+                )}
+              >
+                <input type="radio" name="gender" value={o.value} defaultChecked={selected} className="sr-only" />
+                {o.label}
+              </label>
+            );
+          })}
+        </div>
       </label>
 
       {state.error ? <p className="text-sm text-rose-600">{state.error}</p> : null}

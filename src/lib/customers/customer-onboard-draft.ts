@@ -281,7 +281,11 @@ export function buildQuestionnairePayload(
 
   for (const formName of ONBOARDING_FORMS_IN_ORDER) {
     const defs = filterQuestionDefinitions(definitions[formName] ?? [], memberContext ?? EMPTY_MEMBER_QUESTION_CONTEXT);
-    if (!defs.length) continue;
+    /** Gender-filtered empty sections still persist so `intake_sections_complete` can succeed. */
+    if (!defs.length) {
+      payload[formName] = {};
+      continue;
+    }
     const merged = buildAnswersDefaultValues(defs, answers[formName] ?? {});
     const section: Record<string, unknown> = {};
     for (const d of defs) {

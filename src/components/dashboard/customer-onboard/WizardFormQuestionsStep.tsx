@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { FormProvider, useForm, useWatch } from "react-hook-form";
 
 import { DynamicQuestionRenderer } from "@/features/onboarding/components/DynamicQuestionRenderer";
@@ -31,7 +31,11 @@ export function WizardFormQuestionsStep(props: {
   const { outletId, formName, answers, onSectionChange, memberGender, headerSlot } = props;
   const { data: definitions, isPending, error } = useOnboardingDefinitions(outletId);
   const copy = SECTION_COPY[formName];
-  const defs = filterQuestionDefinitions(definitions?.[formName] ?? [], { gender: memberGender });
+  /** Memoize — `.filter()` returns a new array every render and was resetting react-hook-form. */
+  const defs = useMemo(
+    () => filterQuestionDefinitions(definitions?.[formName] ?? [], { gender: memberGender }),
+    [definitions, formName, memberGender],
+  );
 
   if (error) {
     const msg = error instanceof Error ? error.message : "Unable to load intake questions.";
@@ -52,9 +56,10 @@ export function WizardFormQuestionsStep(props: {
       {headerSlot}
 
       {!defs.length ? (
-        <p className="rounded-xl border border-dashed border-zinc-200 p-5 text-sm text-zinc-500 dark:border-zinc-700">
-          No published questions for this section yet — you can continue.
-        </p>
+        <AutoCompleteEmptySection
+          formName={formName}
+          onSectionChange={onSectionChange}
+        />
       ) : (
         <WizardFormQuestionsFields
           formName={formName}
@@ -69,6 +74,23 @@ export function WizardFormQuestionsStep(props: {
   );
 }
 
+/** Sections with zero applicable prompts (gender rules / empty config) still mark complete in draft. */
+function AutoCompleteEmptySection(props: {
+  formName: OnboardingFormName;
+  onSectionChange: (formName: OnboardingFormName, sectionAnswers: Record<string, unknown>) => void;
+}) {
+  const { formName, onSectionChange } = props;
+  useEffect(() => {
+    onSectionChange(formName, {});
+  }, [formName, onSectionChange]);
+
+  return (
+    <p className="rounded-xl border border-dashed border-zinc-200 p-5 text-sm text-zinc-500 dark:border-zinc-700">
+      No questions apply for this member in this section — you can continue.
+    </p>
+  );
+}
+
 function WizardFormQuestionsFields(props: {
   formName: OnboardingFormName;
   title: string;
@@ -79,10 +101,14 @@ function WizardFormQuestionsFields(props: {
 }) {
   const { formName, title, description, definitions, initialAnswers, onSectionChange } = props;
   const answersSignature = JSON.stringify(initialAnswers);
+  const definitionsSignature = useMemo(
+    () => definitions.map((d) => d.id).join(","),
+    [definitions],
+  );
 
   const defaultValues = useMemo(
     () => buildAnswersDefaultValues(definitions, initialAnswers),
-    [definitions, answersSignature], // eslint-disable-line react-hooks/exhaustive-deps
+    [definitions, answersSignature, definitionsSignature], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const form = useForm({
@@ -90,17 +116,25 @@ function WizardFormQuestionsFields(props: {
     mode: "onChange",
   });
 
-  useEffect(() => {
-    form.reset(defaultValues);
-  }, [defaultValues, form]);
+  /** Skip reset when the parent draft was just updated by this form's watch handler. */
+  const lastEmittedSignature = useRef<string | null>(null);
 
   useEffect(() => {
-    onSectionChange(formName, defaultValues);
     const subscription = form.watch((values) => {
+      const sig = JSON.stringify(values);
+      lastEmittedSignature.current = sig;
       onSectionChange(formName, values as Record<string, unknown>);
     });
     return () => subscription.unsubscribe();
-  }, [form, formName, onSectionChange, defaultValues]);
+  }, [form, formName, onSectionChange]);
+
+  /** Sync from parent draft / definition changes only — not on every local keystroke. */
+  useEffect(() => {
+    if (answersSignature === lastEmittedSignature.current) return;
+    form.reset(defaultValues);
+    lastEmittedSignature.current = answersSignature;
+    onSectionChange(formName, defaultValues);
+  }, [answersSignature, definitionsSignature, defaultValues, form, formName, onSectionChange]);
 
   const watched = useWatch({ control: form.control }) as Record<string, unknown>;
   const completion = useMemo(() => computeSectionCompletion(definitions, watched), [definitions, watched]);
