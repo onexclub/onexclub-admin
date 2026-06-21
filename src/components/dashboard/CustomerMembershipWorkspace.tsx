@@ -138,7 +138,6 @@ export function CustomerMembershipWorkspace(props: {
   const lastSectionSlugRef = useRef(searchParams.get("section"));
 
   const outletLabel = [membership.outlet?.name, membership.outlet?.city].filter(Boolean).join(" · ");
-  const contactCopy = customerMemberContactCopy();
   const cataloguePlan = catalogue.find((p) => p.id === membership.plan?.id) ?? null;
   const planPriceLabel = cataloguePlan
     ? `${cataloguePlan.name} · ${formatInrPrice(cataloguePlan.price, cataloguePlan.currency)}`
@@ -330,7 +329,6 @@ export function CustomerMembershipWorkspace(props: {
             membership={membership}
             outletLabel={outletLabel}
             planPriceLabel={planPriceLabel}
-            contactCopy={contactCopy}
             mergedDefinitions={mergedDefinitions}
             bundledResponses={bundledResponses}
             isLoading={isLoading}
@@ -778,7 +776,6 @@ function ReviewTabContent(props: {
   membership: CustomerMembershipDetailMembership;
   outletLabel: string;
   planPriceLabel: string;
-  contactCopy: ReturnType<typeof customerMemberContactCopy>;
   mergedDefinitions: ReturnType<typeof useOnboardingFormsBundle>["mergedDefinitions"];
   bundledResponses: ReturnType<typeof useOnboardingFormsBundle>["bundledResponses"];
   isLoading: boolean;
@@ -800,7 +797,6 @@ function ReviewTabContent(props: {
     membership,
     outletLabel,
     planPriceLabel,
-    contactCopy,
     mergedDefinitions,
     bundledResponses,
     isLoading,
@@ -932,10 +928,6 @@ function ReviewTabContent(props: {
           variant="compact"
         />
       ) : null}
-
-      <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-400">
-        {contactCopy.blurb}
-      </p>
 
       <div className="flex flex-wrap gap-2">
         {WIZARD_STEP_LABELS.slice(0, -1).map((label, idx) => (

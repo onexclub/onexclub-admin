@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { mapDietTypeTag } from "./diet-tags";
+import { resolveMemberDietFromProfile } from "./resolve-diet-preference";
 import type { AiGeneratedPlanPayload, PlanTemplateRow, PlanTemplateType, UserProfile } from "./types";
 
 /** Insert AI-generated plan into plan_templates + nested weeks/days/items.
@@ -16,7 +16,16 @@ export async function insertAiGeneratedTemplate(
   payload: AiGeneratedPlanPayload,
 ): Promise<PlanTemplateRow> {
   const memberConstraints = [...new Set([...userProfile.injuries, ...userProfile.allergies])];
-  const dietTag = mapDietTypeTag(userProfile.dietPreference ?? null);
+  const resolved = resolveMemberDietFromProfile(userProfile);
+  const dietTags: string[] = [];
+  if (resolved.baseDiet !== "no_restrictions") {
+    if (resolved.baseDiet === "vegetarian" && resolved.eatsEggs) {
+      dietTags.push("eggetarian");
+    } else {
+      dietTags.push(resolved.baseDiet);
+    }
+  }
+  if (resolved.specialDiet) dietTags.push(resolved.specialDiet);
 
   const { data: template, error: templateErr } = await supabase
     .from("plan_templates")
@@ -31,7 +40,7 @@ export async function insertAiGeneratedTemplate(
       target_gender: userProfile.gender === "any" ? null : userProfile.gender,
       tags:
         templateType === "diet"
-          ? ["ai_generated", userProfile.goal, ...(dietTag ? [dietTag] : [])]
+          ? ["ai_generated", userProfile.goal, ...dietTags]
           : ["ai_generated", userProfile.goal],
       constraints: memberConstraints,
       source: "ai_generated",

@@ -5,6 +5,12 @@ import { ROUTES } from "@/utils/routes";
 import { Resend } from "resend";
 import type { TransactionalEmailPurpose } from "@/lib/email/transactional-email-purpose";
 import { getAppOriginForEmail } from "@/lib/email/app-origin-for-email";
+import { ONEX_WEBSITE_URL } from "@/emails/onex-email-brand";
+import {
+  formatResendFromAddress,
+  isResendFromConfigured,
+} from "@/lib/email/resend-from-address";
+import { renderReactEmail } from "@/lib/email/render-react-email";
 
 /**
  * transactional welcome mail for superadmin onboarding.
@@ -27,15 +33,6 @@ function getResend(): Resend | null {
   }
   resendSingleton = new Resend(key);
   return resendSingleton;
-}
-
-function fromAddress(displayName: string): string | null {
-  const raw = process.env.RESEND_FROM_EMAIL?.trim();
-  if (!raw) {
-    console.warn("[email] RESEND_FROM_EMAIL is unset — cannot send.");
-    return null;
-  }
-  return `${displayName} <${raw}>`;
 }
 
 /**
@@ -94,23 +91,33 @@ export async function sendGymOwnerWelcome({
   | { success: true }
 > {
   const resend = getResend();
-  const from = fromAddress("GymOS Platform");
+  const from = formatResendFromAddress("GymOS Platform");
   if (!resend || !from) {
     return { skipped: true, reason: "resend_not_configured", success: false };
   }
 
   const subject = `Welcome to GymOS, ${gymName}! Your dashboard is ready 🎉`;
+  let html: string;
+  try {
+    html = await renderReactEmail(
+      GymOwnerWelcomeEmail({
+        gymName,
+        loginUrl: `${getAppOriginForEmail()}${ROUTES.login}`,
+        outletCity,
+        outletName,
+        ownerName,
+        planTier,
+        supportEmail: process.env.SUPPORT_EMAIL ?? "support@gymplatform.com",
+      }),
+    );
+  } catch (err) {
+    console.error("[email] Gym owner welcome template render failed:", err);
+    return { error: err, success: false };
+  }
+
   const { data, error } = await resend.emails.send({
     from,
-    react: GymOwnerWelcomeEmail({
-      gymName,
-      loginUrl: `${getAppOriginForEmail()}${ROUTES.login}`,
-      outletCity,
-      outletName,
-      ownerName,
-      planTier,
-      supportEmail: process.env.SUPPORT_EMAIL ?? "support@gymplatform.com",
-    }),
+    html,
     subject,
     to: `${ownerName || ownerEmail} <${ownerEmail}>`,
   });
@@ -186,24 +193,83 @@ async function customerWelcomeAlreadyLogged(profileId: string): Promise<boolean>
   }
 }
 
+export type SendCustomerWelcomeOptions = {
+  /**
+   * Default `true`. Gym staff onboarding passes `false` so welcome goes to the profile email
+   * immediately — members sign in with phone OTP and may not verify email first.
+   */
+  requireEmailConfirmed?: boolean;
+  /** Staff QA retry — bypass `email_logs` dedupe so Resend is invoked again. */
+  skipDedupe?: boolean;
+};
+
+/** Maps {@link sendCustomerWelcome} result to staff-visible copy (QA button, onboarding logs). */
+export function describeCustomerWelcomeSendResult(
+  result: Awaited<ReturnType<typeof sendCustomerWelcome>>,
+): { success?: string; error?: string; debug?: string } {
+  if (result.success) {
+    if ("alreadySent" in result && result.alreadySent) {
+      return {
+        success: "Skipped — customer welcome was already logged in email_logs.",
+        debug: "alreadySent",
+      };
+    }
+    return {
+      success: "Welcome email accepted by Resend.",
+      debug: "resendId" in result && result.resendId ? result.resendId : "sent",
+    };
+  }
+
+  if ("reason" in result) {
+    const reasonMessages: Record<string, string> = {
+      resend_not_configured:
+        "Resend is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL in the server environment.",
+      auth_user_not_found: "No Auth user for this profile — member may not be fully provisioned.",
+      email_not_verified: "Auth email is not verified yet (welcome requires confirmation for this path).",
+      profile_not_found: "Profile record not found.",
+      no_email: "No email on profile or Auth user.",
+      no_active_membership: "No active gym membership — welcome email needs an active membership with outlet/org.",
+    };
+    return {
+      error: reasonMessages[result.reason] ?? `Could not send welcome email (${result.reason}).`,
+      debug: result.reason,
+    };
+  }
+
+  if ("error" in result && result.error != null) {
+    const raw =
+      typeof result.error === "object" && result.error !== null && "message" in result.error
+        ? String((result.error as { message: unknown }).message)
+        : typeof result.error === "string"
+          ? result.error
+          : JSON.stringify(result.error);
+    return {
+      error: `Resend rejected the send: ${raw}`,
+      debug: raw,
+    };
+  }
+
+  return { error: "Welcome email failed for an unknown reason.", debug: "unknown" };
+}
+
 /** Called from `POST /api/send-customer-welcome` (internal key) — e.g. Supabase webhook / Edge Function. */
 export async function sendCustomerWelcome(
   profileId: string,
+  options?: SendCustomerWelcomeOptions,
 ): Promise<
   | { alreadySent?: false; error: unknown; success: false }
   | { alreadySent: true; success: true }
   | { reason: string; success: false }
-  | { success: true }
+  | { resendId?: string | null; success: true }
 > {
   const resend = getResend();
-  const rawFromEmail = process.env.RESEND_FROM_EMAIL?.trim();
-  if (!resend || !rawFromEmail) {
+  if (!resend || !isResendFromConfigured()) {
     return { reason: "resend_not_configured", success: false };
   }
 
   const admin = createServiceRoleSupabaseClient();
 
-  if (await customerWelcomeAlreadyLogged(profileId)) {
+  if (!options?.skipDedupe && (await customerWelcomeAlreadyLogged(profileId))) {
     return { alreadySent: true, success: true };
   }
 
@@ -211,7 +277,8 @@ export async function sendCustomerWelcome(
   if (authErr || !authData.user) {
     return { reason: "auth_user_not_found", success: false };
   }
-  if (!authData.user.email_confirmed_at) {
+  const requireEmailConfirmed = options?.requireEmailConfirmed !== false;
+  if (requireEmailConfirmed && !authData.user.email_confirmed_at) {
     console.log(`[email] Profile ${profileId}: email not confirmed in Auth — skip customer welcome`);
     return { reason: "email_not_verified", success: false };
   }
@@ -297,23 +364,40 @@ export async function sendCustomerWelcome(
     ? `${profile.full_name.trim()} <${toEmail}>`
     : toEmail;
 
+  const from = formatResendFromAddress(org.name);
+  if (!from) {
+    return { reason: "resend_not_configured", success: false };
+  }
+
+  let html: string;
+  try {
+    html = await renderReactEmail(
+      CustomerWelcomeEmail({
+        brandLogoUrl: `${getAppOriginForEmail()}/brand/logo-wordmark.png`,
+        websiteUrl: process.env.ONEXCLUB_WEBSITE_URL?.trim() || ONEX_WEBSITE_URL,
+        endDate:
+          mem.end_date != null
+            ? new Date(mem.end_date).toLocaleDateString("en-IN", membershipDateFmt)
+            : null,
+        gymName: org.name,
+        gymPhone: outlet.phone ?? null,
+        memberName: profile.full_name?.trim() || "there",
+        memberPhone: profile.phone ?? null,
+        outletCity: outlet.city ?? "",
+        outletName: outlet.name ?? "",
+        planName: planLabel,
+        startDate: new Date(mem.start_date).toLocaleDateString("en-IN", membershipDateFmt),
+        trainerName,
+      }),
+    );
+  } catch (err) {
+    console.error("[email] Customer welcome template render failed:", err);
+    return { error: err, success: false };
+  }
+
   const { data, error } = await resend.emails.send({
-    from: `${org.name} <${rawFromEmail}>`,
-    react: CustomerWelcomeEmail({
-      appDownloadUrl: process.env.APP_DOWNLOAD_URL ?? "#",
-      endDate:
-        mem.end_date != null
-          ? new Date(mem.end_date).toLocaleDateString("en-IN", membershipDateFmt)
-          : null,
-      gymName: org.name,
-      gymPhone: outlet.phone ?? null,
-      memberName: profile.full_name?.trim() || "there",
-      outletCity: outlet.city ?? "",
-      outletName: outlet.name ?? "",
-      planName: planLabel,
-      startDate: new Date(mem.start_date).toLocaleDateString("en-IN", membershipDateFmt),
-      trainerName,
-    }),
+    from,
+    html,
     subject,
     to: recipientLabel,
   });
@@ -336,5 +420,20 @@ export async function sendCustomerWelcome(
     to_name: profile.full_name ?? null,
   });
 
-  return { success: true };
+  return { success: true, resendId: data?.id ?? null };
+}
+
+/**
+ * Gym staff onboarding — send welcome as soon as membership is created.
+ * Wired from {@link ../../app/admin/members/onboard/actions.ts}.
+ */
+export async function sendCustomerWelcomeAfterGymOnboard(
+  profileId: string,
+): Promise<
+  | { alreadySent?: false; error: unknown; success: false }
+  | { alreadySent: true; success: true }
+  | { reason: string; success: false }
+  | { success: true }
+> {
+  return sendCustomerWelcome(profileId, { requireEmailConfirmed: false });
 }

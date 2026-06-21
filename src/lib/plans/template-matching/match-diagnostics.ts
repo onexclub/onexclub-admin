@@ -1,5 +1,5 @@
 import { countByDietType, formatDietLabel } from "./diet-compatibility";
-import { mapDietTypeTag } from "./diet-tags";
+import { resolveMemberDietFromProfile } from "./resolve-diet-preference";
 import type { MatchDiagnostics, PlanTemplateRow, PlanTemplateType, UserProfile } from "./types";
 
 export function buildMatchDiagnostics(params: {
@@ -13,15 +13,15 @@ export function buildMatchDiagnostics(params: {
   const { userProfile, templateType, afterDemographicFilter, afterDietFilter, failureCategory } =
     params;
   const dietCounts = countByDietType(afterDemographicFilter);
-  const memberDiet = mapDietTypeTag(userProfile.dietPreference ?? null);
+  const resolved = resolveMemberDietFromProfile(userProfile);
 
   let message = params.extraMessage ?? "";
 
   if (!message && failureCategory === "insufficient_catalog") {
-    if (templateType === "diet" && memberDiet && memberDiet !== "no_restrictions") {
+    if (templateType === "diet" && resolved.baseDiet !== "no_restrictions") {
       const matchingDiet = afterDietFilter.length;
       message =
-        `No ${formatDietLabel(memberDiet)} diet templates for ` +
+        `No ${resolved.displayLabel} diet templates for ` +
         `${userProfile.goal} / ${userProfile.level} / ${userProfile.gender}. ` +
         `Found ${afterDemographicFilter.length} plan(s) for goal+level+gender but ` +
         `${matchingDiet} match diet preference. ` +
@@ -29,7 +29,11 @@ export function buildMatchDiagnostics(params: {
     } else {
       message =
         `No active ${templateType} templates for ` +
-        `${userProfile.goal} / ${userProfile.level} / ${userProfile.gender}.`;
+        `${userProfile.goalIntake ?? userProfile.goal} / ${userProfile.level} / ${userProfile.gender}` +
+        (userProfile.goalFallbacks.length > 1
+          ? ` (searched goals: ${userProfile.goalFallbacks.join(", ")})`
+          : "") +
+        `.`;
     }
   }
 
@@ -38,10 +42,10 @@ export function buildMatchDiagnostics(params: {
   }
 
   return {
-    memberGoal: userProfile.goal,
+    memberGoal: userProfile.goalIntake ?? userProfile.goal,
     memberLevel: userProfile.level,
     memberGender: userProfile.gender,
-    memberDiet: memberDiet ?? undefined,
+    memberDiet: resolved.displayLabel,
     totalAfterGoalLevelGender: afterDemographicFilter.length,
     totalAfterDietFilter: afterDietFilter.length,
     dietTypesInCatalog: dietCounts,

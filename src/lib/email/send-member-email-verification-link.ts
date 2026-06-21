@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 import { getAppOriginForEmail } from "@/lib/email/app-origin-for-email";
+import { formatResendFromAddress, isResendFromConfigured } from "@/lib/email/resend-from-address";
 import { ROUTES } from "@/utils/routes";
 
 /**
@@ -32,8 +33,8 @@ export async function sendMemberEmailVerificationLink(params: {
   actionLink: string;
 }): Promise<{ error?: string; skipped?: boolean }> {
   const resend = getResend();
-  const from = process.env.RESEND_FROM_EMAIL?.trim();
-  if (!resend || !from) {
+  const from = formatResendFromAddress("GymOS");
+  if (!resend || !from || !isResendFromConfigured()) {
     console.warn("[email] Cannot send verification link — RESEND_* missing.");
     return { skipped: true };
   }
@@ -42,7 +43,7 @@ export async function sendMemberEmailVerificationLink(params: {
   const friendly = memberName.trim() || "there";
 
   const { error } = await resend.emails.send({
-    from: `GymOS <${from}>`,
+    from,
     subject: "Confirm your email",
     text: [
       `Hi ${friendly},`,

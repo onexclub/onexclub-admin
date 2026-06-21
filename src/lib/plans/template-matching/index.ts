@@ -25,8 +25,9 @@ export { filterByConstraints, requiresDietSafetyHold } from "./hard-filter";
 export {
   filterByDietPreference,
   inferTemplateDietType,
-  isDietTypeCompatible,
 } from "./diet-compatibility";
+export { catalogueGoalSlug, intakeFitnessGoalFallbacks, normalizeFitnessGoalInput } from "./goal-slugs";
+export { resolveMemberDiet, resolveMemberDietFromProfile } from "./resolve-diet-preference";
 export { isSpecificDietPreference, mapDietTypeTag } from "./diet-tags";
 export { scoreTemplateSoft, pickBestBySoftScore, rankCandidatesBySoftScore } from "./soft-score";
 export { getPlanForUser } from "./get-plan-for-user";

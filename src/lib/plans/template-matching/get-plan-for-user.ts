@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { filterByDietPreference } from "./diet-compatibility";
+import { filterByVegetarianEggPreference } from "./diet-meal-validation";
+import { resolveMemberDietFromProfile } from "./resolve-diet-preference";
 import { generateAIFallbackPlan } from "./generate-ai-fallback";
 import { filterByConstraints } from "./hard-filter";
 import { logTemplateGap } from "./log-template-gap";
@@ -58,6 +60,10 @@ export async function getPlanForUser(
   const validateWithGroq = options.validateWithGroq ?? isLlmConfigured();
   const maxAttempts = options.maxValidationAttempts ?? 3;
 
+  const goalSlugs = userProfile.goalFallbacks?.length
+    ? userProfile.goalFallbacks
+    : [userProfile.goal];
+
   const { data, error } = await supabase
     .from("plan_templates")
     .select(TEMPLATE_SELECT)
@@ -65,7 +71,7 @@ export async function getPlanForUser(
     .eq("status", "active")
     .eq("is_active", true)
     .is("deleted_at", null)
-    .eq("primary_goal", userProfile.goal)
+    .in("primary_goal", goalSlugs)
     .eq("difficulty_level", userProfile.level)
     .or(`outlet_id.eq.${userProfile.outletId},outlet_id.is.null`);
 
@@ -79,10 +85,20 @@ export async function getPlanForUser(
     userProfile,
   );
 
-  const matchingPool =
+  const resolvedDiet = resolveMemberDietFromProfile(userProfile);
+  const matchingPoolRaw =
     templateType === "diet"
       ? filterByDietPreference(demographicPool, userProfile)
       : demographicPool;
+
+  const matchingPool =
+    templateType === "diet" && resolvedDiet.baseDiet === "vegetarian"
+      ? await filterByVegetarianEggPreference(
+          supabase,
+          matchingPoolRaw,
+          resolvedDiet.eatsEggs,
+        )
+      : matchingPoolRaw;
 
   // ── No DB match → Groq creates a personalized plan and saves to plan_templates ──
   if (matchingPool.length === 0) {

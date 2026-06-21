@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { UserProfile } from "./types";
 import { mapDietTypeTag } from "./diet-tags";
+import { resolveMemberDiet } from "./resolve-diet-preference";
 import { sanitizeMemberTags } from "./member-tags";
 
 const EXPERIENCE_TO_LEVEL: Record<string, string> = {
@@ -34,10 +35,7 @@ export function levelFromIntakeScore(score: number | null | undefined): string {
   return "beginner";
 }
 
-function normalizeGoal(raw: string | null | undefined): string {
-  if (!raw?.trim()) return "general_fitness";
-  return raw.trim().toLowerCase().replace(/\s+/g, "_");
-}
+import { catalogueGoalSlug, intakeFitnessGoalFallbacks, normalizeFitnessGoalInput } from "./goal-slugs";
 
 function parseStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -129,17 +127,35 @@ export async function buildUserProfileFromIntake(
     (Array.isArray(diet.diet_pattern) ? diet.diet_pattern[0] : diet.diet_pattern) ??
     null;
 
-  const dietPreference = mapDietTypeTag(dietPreferenceRaw) ?? dietPreferenceRaw;
+  const resolved = resolveMemberDiet({
+    dietType: dietPreferenceRaw,
+    eatsEggs: diet.eats_eggs,
+    specialDiet: diet.special_diet,
+  });
+
+  const dietPreference =
+    resolved.baseDiet === "no_restrictions"
+      ? mapDietTypeTag(dietPreferenceRaw) ?? dietPreferenceRaw
+      : resolved.baseDiet;
+
+  const fitnessGoalRaw = basic.fitness_goal as string | undefined;
+  const goalIntake = normalizeFitnessGoalInput(fitnessGoalRaw);
+  const goalFallbacks = intakeFitnessGoalFallbacks(fitnessGoalRaw);
+  const goal = catalogueGoalSlug(fitnessGoalRaw);
 
   return {
     profileId,
     outletId,
-    goal: normalizeGoal(basic.fitness_goal as string | undefined),
+    goal,
+    goalIntake,
+    goalFallbacks,
     level,
     gender: (profile.gender as string | undefined)?.toLowerCase() ?? "any",
     injuries,
     allergies,
     dietPreference,
+    eatsEggs: resolved.eatsEggs,
+    specialDiet: resolved.specialDiet,
     equipment: parseStringArray(basic.available_equipment),
     intakeScore: intakeScore ?? undefined,
     age,

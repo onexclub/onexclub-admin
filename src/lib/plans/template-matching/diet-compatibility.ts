@@ -1,5 +1,5 @@
-import { mapDietTypeTag } from "./diet-tags";
 import type { PlanTemplateRow, UserProfile } from "./types";
+import { resolveMemberDietFromProfile } from "./resolve-diet-preference";
 
 /** Diet slugs stored on `plan_templates.tags` — order matters for name parsing. */
 const DIET_TYPE_TAGS = [
@@ -36,34 +36,64 @@ export function inferTemplateDietType(template: PlanTemplateRow): DietTypeSlug |
   return null;
 }
 
-/** Exact diet match required when member chose a specific diet (not "No Specific Diet"). */
-export function isDietTypeCompatible(
-  userDietTag: DietTypeSlug | null,
+function isSpecialDietCompatible(specialDiet: string, template: PlanTemplateRow): boolean {
+  const templateDiet = inferTemplateDietType(template);
+  if (templateDiet === specialDiet) return true;
+  const tags = template.tags ?? [];
+  return tags.includes(specialDiet);
+}
+
+function isBaseDietCompatible(
+  baseDiet: "vegetarian" | "non_vegetarian" | "vegan",
+  eatsEggs: boolean,
   template: PlanTemplateRow,
 ): boolean {
-  if (!userDietTag || userDietTag === "no_restrictions") return true;
-
   const templateDiet = inferTemplateDietType(template);
-  // Strict: untagged templates do not satisfy an explicit member diet preference
   if (!templateDiet) return false;
 
-  return templateDiet === userDietTag;
+  if (baseDiet === "vegan") {
+    return templateDiet === "vegan";
+  }
+
+  if (baseDiet === "non_vegetarian") {
+    return templateDiet === "non_vegetarian";
+  }
+
+  // Vegetarian base — egg preference refined in diet-meal-validation
+  if (templateDiet === "vegan" || templateDiet === "non_vegetarian") return false;
+  if (templateDiet === "eggetarian") return eatsEggs;
+  if (templateDiet === "vegetarian") return true;
+
+  return false;
 }
 
 /**
- * Hard filter for diet plans — same tier as goal/level/gender.
- * Prevents assigning Vegan/Vegetarian when member chose Non-Vegetarian.
+ * Hard filter for diet plans — goal/level/gender tier.
+ * Uses resolved base diet + optional special style (keto, IF, pescatarian).
  */
 export function filterByDietPreference(
   candidates: PlanTemplateRow[],
   userProfile: UserProfile,
 ): PlanTemplateRow[] {
-  if (userProfile.dietPreference == null) return candidates;
+  const resolved = resolveMemberDietFromProfile(userProfile);
 
-  const userTag = mapDietTypeTag(userProfile.dietPreference) as DietTypeSlug | null;
-  if (!userTag || userTag === "no_restrictions") return candidates;
+  if (resolved.baseDiet === "no_restrictions" && !resolved.specialDiet) {
+    return candidates;
+  }
 
-  return candidates.filter((template) => isDietTypeCompatible(userTag, template));
+  let pool = candidates;
+
+  if (resolved.specialDiet) {
+    pool = pool.filter((template) => isSpecialDietCompatible(resolved.specialDiet!, template));
+  }
+
+  if (resolved.baseDiet !== "no_restrictions") {
+    pool = pool.filter((template) =>
+      isBaseDietCompatible(resolved.baseDiet as "vegetarian" | "non_vegetarian" | "vegan", resolved.eatsEggs, template),
+    );
+  }
+
+  return pool;
 }
 
 /** Count templates by inferred diet type — used in failure diagnostics. */

@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { callLlmJsonCompletion, parseAiPlanJson } from "./llm";
 import { insertAiGeneratedTemplate } from "./insert-ai-template";
-import { mapDietTypeTag } from "./diet-tags";
+import { resolveMemberDietFromProfile } from "./resolve-diet-preference";
 import {
   northIndiaDietSystemRules,
   northIndiaMealSchemaExample,
@@ -79,6 +79,8 @@ export async function generateAIFallbackPlan(
     "Do not make medical claims. Keep plans practical and safe.",
   ].join(" ");
 
+  const resolvedDiet = resolveMemberDietFromProfile(userProfile);
+
   const userPrompt = JSON.stringify(
     {
       task: `Generate a ${templateType} plan`,
@@ -88,7 +90,9 @@ export async function generateAIFallbackPlan(
         gender: userProfile.gender,
         injuries: userProfile.injuries,
         allergies: userProfile.allergies,
-        dietPreference: userProfile.dietPreference,
+        diet: resolvedDiet.displayLabel,
+        eatsEggs: resolvedDiet.eatsEggs,
+        specialDiet: resolvedDiet.specialDiet,
         equipment: userProfile.equipment,
       },
       schema: AI_SCHEMA_EXAMPLE,
@@ -98,10 +102,16 @@ export async function generateAIFallbackPlan(
           ? "Include meals array on each day; omit exercises."
           : "Include exercises array on each day; omit meals.",
         templateType === "diet"
-          ? "Meals must use North Indian staples only (roti, dal, paneer, chicken curry, poha, dahi, etc.)."
+          ? "Meals must use North Indian staples (roti, dal, paneer, anda bhurji, poha, dahi) — Punjab/Delhi/Himachal friendly."
+          : null,
+        templateType === "diet" && resolvedDiet.baseDiet === "vegetarian" && resolvedDiet.eatsEggs
+          ? "MUST include eggs (anda bhurji, boiled eggs) daily — vegetarian who eats eggs. NO meat/fish."
+          : null,
+        templateType === "diet" && resolvedDiet.baseDiet === "vegetarian" && !resolvedDiet.eatsEggs
+          ? "Strict vegetarian — NO eggs, meat, or fish in any meal."
           : null,
         templateType === "diet"
-          ? `Diet MUST match member preference exactly: ${mapDietTypeTag(userProfile.dietPreference ?? null) ?? "balanced"}.`
+          ? `Diet MUST match: ${resolvedDiet.displayLabel}.`
           : null,
         "2 weeks, 7 days per week (compact plan).",
         "Mark rest days with is_rest_day: true and empty meal/exercise arrays.",

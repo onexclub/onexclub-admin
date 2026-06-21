@@ -101,6 +101,10 @@ export async function fetchGroundingTemplates(
 ): Promise<PlanTemplateRow[]> {
   const levels = adjacentLevels(userProfile.level);
 
+  const goalSlugs = userProfile.goalFallbacks?.length
+    ? userProfile.goalFallbacks
+    : [userProfile.goal];
+
   const { data, error } = await supabase
     .from("plan_templates")
     .select(TEMPLATE_SELECT)
@@ -108,8 +112,9 @@ export async function fetchGroundingTemplates(
     .eq("status", "active")
     .eq("is_active", true)
     .is("deleted_at", null)
-    .or(`outlet_id.eq.${userProfile.outletId},outlet_id.is.null`)
+    .in("primary_goal", goalSlugs)
     .in("difficulty_level", levels)
+    .or(`outlet_id.eq.${userProfile.outletId},outlet_id.is.null`)
     .limit(limit * 4);
 
   if (error || !data?.length) return [];
@@ -135,7 +140,10 @@ function adjacentLevels(level: string): string[] {
 
 function groundingDistance(row: PlanTemplateRow, profile: UserProfile): number {
   let d = 0;
-  if (row.primary_goal !== profile.goal) d += 3;
+  const fallbacks = profile.goalFallbacks?.length ? profile.goalFallbacks : [profile.goal];
+  const goalIdx = fallbacks.indexOf(row.primary_goal ?? "");
+  if (goalIdx === -1) d += 5;
+  else if (goalIdx > 0) d += 2;
   if (row.difficulty_level !== profile.level) d += 2;
   if (row.target_gender && row.target_gender !== profile.gender) d += 5;
   return d;

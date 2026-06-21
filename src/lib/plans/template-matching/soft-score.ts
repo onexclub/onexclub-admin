@@ -15,6 +15,12 @@ export function scoreTemplateSoft(
   if (preferOutletSpecific && template.outlet_id === userProfile.outletId) score += 50;
   else if (template.outlet_id == null) score += 10;
 
+  if (userProfile.goalFallbacks?.length && template.primary_goal) {
+    const idx = userProfile.goalFallbacks.indexOf(template.primary_goal);
+    if (idx === 0) score += 25;
+    else if (idx > 0) score += 8;
+  }
+
   if (userProfile.dietPreference && template.plan_type === "diet") {
     const dietTag = mapDietTypeTag(userProfile.dietPreference);
     if (dietTag && template.tags?.includes(dietTag)) score += 40;

@@ -18,6 +18,14 @@ export type QuestionOption = { value: string; label: string };
 export type QuestionVisibilityRules = {
   /** When non-empty, only these profile genders see the prompt. */
   genders?: ProfileGender[];
+  /**
+   * Show only when another answer in the same section matches.
+   * Example: eats_eggs when diet_type = Vegetarian.
+   */
+  show_when?: {
+    question_key: string;
+    values: string[];
+  };
 };
 
 export type QuestionDefinition = {

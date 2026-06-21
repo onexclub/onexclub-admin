@@ -1,7 +1,7 @@
 import { callLlmJsonCompletion } from "./llm";
 import { getLlmConfig, isLlmConfigured } from "./llm/config";
 import { inferTemplateDietType, formatDietLabel } from "./diet-compatibility";
-import { mapDietTypeTag } from "./diet-tags";
+import { resolveMemberDietFromProfile } from "./resolve-diet-preference";
 import type { MatchValidationResult, PlanTemplateRow, PlanTemplateType, UserProfile } from "./types";
 
 type GroqValidationPayload = {
@@ -29,7 +29,7 @@ export async function validateMatchWithGroq(
 ): Promise<MatchValidationResult | null> {
   if (!isLlmConfigured()) return null;
 
-  const memberDiet = mapDietTypeTag(userProfile.dietPreference ?? null);
+  const resolved = resolveMemberDietFromProfile(userProfile);
   const templateDiet = inferTemplateDietType(template);
 
   const systemPrompt = [
@@ -46,7 +46,9 @@ export async function validateMatchWithGroq(
         goal: userProfile.goal,
         level: userProfile.level,
         gender: userProfile.gender,
-        diet_preference: memberDiet ?? "no_restrictions",
+        diet: resolved.displayLabel,
+        eats_eggs: resolved.eatsEggs,
+        special_diet: resolved.specialDiet,
         allergies: userProfile.allergies,
         injuries: userProfile.injuries,
       },
@@ -67,8 +69,9 @@ export async function validateMatchWithGroq(
           "diet_mismatch|goal_mismatch|level_mismatch|gender_mismatch|insufficient_catalog|none|other",
       },
       rules: [
-        "Non-Vegetarian member must NOT get Vegan or Vegetarian diet plans",
-        "Vegetarian member must NOT get Non-Vegetarian or Vegan plans",
+        "Non-Vegetarian member must NOT get Vegan or Vegetarian-only diet plans",
+        "Vegetarian who eats eggs must get plans with anda/eggs — NOT strict veg without eggs",
+        "Vegetarian who does NOT eat eggs must NOT get eggetarian or egg-heavy plans",
         "Vegan member must NOT get any animal-product diet plans",
         "Goal and difficulty_level must match member profile",
       ],
@@ -96,16 +99,20 @@ export async function validateMatchWithGroq(
     // Deterministic fallback when Groq unavailable — strict diet check
     const dietOk =
       templateType !== "diet" ||
-      !memberDiet ||
-      memberDiet === "no_restrictions" ||
-      templateDiet === memberDiet;
+      resolved.baseDiet === "no_restrictions" ||
+      (resolved.baseDiet === "vegan" && templateDiet === "vegan") ||
+      (resolved.baseDiet === "non_vegetarian" && templateDiet === "non_vegetarian") ||
+      (resolved.baseDiet === "vegetarian" &&
+        templateDiet !== "vegan" &&
+        templateDiet !== "non_vegetarian" &&
+        (!resolved.eatsEggs ? templateDiet !== "eggetarian" : true));
 
     return {
       approved: dietOk,
       confidence: dietOk ? 70 : 0,
       reason: dietOk
         ? "Groq unavailable; passed deterministic diet compatibility check."
-        : `Groq unavailable; diet mismatch: member wants ${formatDietLabel(memberDiet)}, template is ${formatDietLabel(templateDiet)}.`,
+        : `Groq unavailable; diet mismatch: member wants ${resolved.displayLabel}, template is ${formatDietLabel(templateDiet)}.`,
       failureCategory: dietOk ? "none" : "diet_mismatch",
       reviewedBy: "deterministic",
     };

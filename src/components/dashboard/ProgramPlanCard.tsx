@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, Dumbbell, UtensilsCrossed } from "lucide-react";
+import { ChevronRight, Dumbbell, Unlink, UtensilsCrossed } from "lucide-react";
 
 import type { ProgramPlanTemplateListItem } from "@/lib/admin/program-plan-templates";
 import { formatTemplateAudience, formatTemplateScoreBand } from "@/lib/admin/program-plan-templates";
@@ -8,10 +8,12 @@ import {
   type CustomerProgramPlanAssignment,
   formatProgramGoal,
 } from "@/lib/customers/customer-program-plans";
+import { formatPlanDescriptionForDisplay } from "@/lib/customers/format-plan-description";
 import { computeProgramSchedulePercent } from "@/lib/customers/program-plan-template-detail";
 import { formatMembershipTimestampUtcLabel } from "@/lib/date-term";
 import { cn } from "@/lib/utils/cn";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export type ProgramPlanCardProps =
@@ -21,6 +23,8 @@ export type ProgramPlanCardProps =
       assignment: CustomerProgramPlanAssignment | null;
       compact?: boolean;
       onViewDetails: (assignment: CustomerProgramPlanAssignment) => void;
+      /** When set, shows an unlink control on active assignments (staff workspace). */
+      onUnlink?: () => void;
     }
   | {
       mode: "catalog";
@@ -118,6 +122,8 @@ export function ProgramPlanCard(props: ProgramPlanCardProps) {
       : null;
   const atStart = assignment != null && assignment.current_week === 1 && assignment.current_day === 1;
 
+  const displayDescription = formatPlanDescriptionForDisplay(template.description);
+
   const handleClick = () => {
     if (props.mode === "assignment") {
       props.onViewDetails(props.assignment!);
@@ -127,123 +133,140 @@ export function ProgramPlanCard(props: ProgramPlanCardProps) {
   };
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      className="group w-full text-left transition hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/40"
-    >
+    <div className="group w-full text-left transition hover:scale-[1.01] focus-within:ring-2 focus-within:ring-orange-500/40 focus-within:rounded-xl">
       <Card className={cn("overflow-hidden border bg-gradient-to-br transition group-hover:shadow-md", accent)}>
-        <CardHeader className={cn("space-y-3", compact ? "p-4 pb-2" : undefined)}>
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className={cn("rounded-lg bg-white/80 p-2 shadow-sm dark:bg-zinc-900/80", iconTone)}>
-                <Icon className="size-4" aria-hidden />
-              </span>
-              <div>
-                <CardTitle className="text-sm leading-snug">{template.name}</CardTitle>
-                <CardDescription className="mt-0.5">{title}</CardDescription>
+        <button
+          type="button"
+          onClick={handleClick}
+          className="w-full text-left focus-visible:outline-none"
+        >
+          <CardHeader className={cn("space-y-3", compact ? "p-4 pb-2" : undefined)}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className={cn("rounded-lg bg-white/80 p-2 shadow-sm dark:bg-zinc-900/80", iconTone)}>
+                  <Icon className="size-4" aria-hidden />
+                </span>
+                <div>
+                  <CardTitle className="text-sm leading-snug">{template.name}</CardTitle>
+                  <CardDescription className="mt-0.5">{title}</CardDescription>
+                </div>
               </div>
-            </div>
-            {assignment ? (
-              <Badge variant={statusBadgeVariant(assignment.status)}>{assignment.status}</Badge>
-            ) : props.mode === "catalog" && !props.template.is_active ? (
-              <Badge variant="warning">Inactive</Badge>
-            ) : null}
-          </div>
-        </CardHeader>
-        <CardContent className={cn("space-y-3", compact ? "p-4 pt-0" : undefined)}>
-          {template.description && !compact ? (
-            <p className="line-clamp-2 text-xs text-zinc-600 dark:text-zinc-400">{template.description}</p>
-          ) : null}
-
-          {props.mode === "assignment" && assignment ? (
-            <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-              <Stat label="Tier" value={tierLabel(assignment.progression_tier)} />
-              <Stat label="Goal" value={formatProgramGoal(template.primary_goal)} />
-              <Stat label="Match" value={matchMethodLabel(assignment.match_method)} />
-              <Stat
-                label="Match score"
-                value={
-                  assignment.matched_score != null && assignment.matched_score > 0
-                    ? String(assignment.matched_score)
-                    : "Recalculate on assign"
-                }
-              />
-              <Stat
-                label="Progress"
-                value={
-                  weeksTotal
-                    ? `Week ${assignment.current_week} of ${weeksTotal} · Day ${assignment.current_day}`
-                    : `Week ${assignment.current_week} · Day ${assignment.current_day}`
-                }
-                className="col-span-2"
-              />
-              <Stat
-                label="Assigned"
-                value={formatMembershipTimestampUtcLabel(assignment.assigned_at)}
-                className="col-span-2"
-              />
-            </dl>
-          ) : props.mode === "catalog" ? (
-            <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-              <Stat label="Tier" value={tierLabel(props.template.difficulty_level)} />
-              <Stat label="Goal" value={formatProgramGoal(template.primary_goal)} />
-              <Stat
-                label="Duration"
-                value={weeksTotal ? `${weeksTotal} weeks` : "Flexible"}
-              />
-              <Stat label="Audience" value={formatTemplateAudience(props.template)} />
-              {formatTemplateScoreBand(props.template) ? (
-                <Stat label="Intake score" value={formatTemplateScoreBand(props.template)!} className="col-span-2" />
+              {assignment ? (
+                <Badge variant={statusBadgeVariant(assignment.status)}>{assignment.status}</Badge>
+              ) : props.mode === "catalog" && !props.template.is_active ? (
+                <Badge variant="warning">Inactive</Badge>
               ) : null}
-              <Stat
-                label="Scope"
-                value={
-                  props.scopeDetail ??
-                  (props.template.outlet_id ? "Branch template" : "Platform-wide")
-                }
-                className="col-span-2"
-              />
-            </dl>
-          ) : null}
-
-          {schedulePercent != null && !atStart ? (
-            <div>
-              <div className="mb-1 flex justify-between text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                <span>Schedule position</span>
-                <span>{schedulePercent}%</span>
-              </div>
-              <div
-                className="h-1.5 overflow-hidden rounded-full bg-zinc-200/80 dark:bg-zinc-800"
-                role="progressbar"
-                aria-valuenow={schedulePercent}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label="Position in program schedule"
-              >
-                <div
-                  className={cn(
-                    "h-full rounded-full transition-all",
-                    isExercise ? "bg-violet-600 dark:bg-violet-500" : "bg-emerald-600 dark:bg-emerald-500",
-                  )}
-                  style={{ width: `${schedulePercent}%` }}
-                />
-              </div>
             </div>
-          ) : atStart && weeksTotal ? (
-            <p className="text-[10px] text-zinc-500">Just started · Week 1 of {weeksTotal}</p>
-          ) : null}
+          </CardHeader>
+          <CardContent className={cn("space-y-3", compact ? "p-4 pt-0" : undefined)}>
+            {displayDescription && !compact ? (
+              <p className="line-clamp-2 text-xs text-zinc-600 dark:text-zinc-400">{displayDescription}</p>
+            ) : null}
 
-          <p className="flex items-center gap-1 text-xs font-medium text-orange-600 opacity-0 transition group-hover:opacity-100 dark:text-orange-400">
-            View full plan
-            <ChevronRight className="size-3.5" aria-hidden />
-          </p>
+            {props.mode === "assignment" && assignment ? (
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                <Stat label="Tier" value={tierLabel(assignment.progression_tier)} />
+                <Stat label="Goal" value={formatProgramGoal(template.primary_goal)} />
+                <Stat label="Match" value={matchMethodLabel(assignment.match_method)} />
+                <Stat
+                  label="Match score"
+                  value={
+                    assignment.matched_score != null && assignment.matched_score > 0
+                      ? String(assignment.matched_score)
+                      : "Recalculate on assign"
+                  }
+                />
+                <Stat
+                  label="Progress"
+                  value={
+                    weeksTotal
+                      ? `Week ${assignment.current_week} of ${weeksTotal} · Day ${assignment.current_day}`
+                      : `Week ${assignment.current_week} · Day ${assignment.current_day}`
+                  }
+                  className="col-span-2"
+                />
+                <Stat
+                  label="Assigned"
+                  value={formatMembershipTimestampUtcLabel(assignment.assigned_at)}
+                  className="col-span-2"
+                />
+              </dl>
+            ) : props.mode === "catalog" ? (
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                <Stat label="Tier" value={tierLabel(props.template.difficulty_level)} />
+                <Stat label="Goal" value={formatProgramGoal(template.primary_goal)} />
+                <Stat
+                  label="Duration"
+                  value={weeksTotal ? `${weeksTotal} weeks` : "Flexible"}
+                />
+                <Stat label="Audience" value={formatTemplateAudience(props.template)} />
+                {formatTemplateScoreBand(props.template) ? (
+                  <Stat label="Intake score" value={formatTemplateScoreBand(props.template)!} className="col-span-2" />
+                ) : null}
+                <Stat
+                  label="Scope"
+                  value={
+                    props.scopeDetail ??
+                    (props.template.outlet_id ? "Branch template" : "Platform-wide")
+                  }
+                  className="col-span-2"
+                />
+              </dl>
+            ) : null}
 
-          {assignment && assignment.plan_sequence > 1 ? (
-            <p className="text-[10px] text-zinc-500">Plan #{assignment.plan_sequence} for this member</p>
-          ) : null}
-        </CardContent>
+            {schedulePercent != null && !atStart ? (
+              <div>
+                <div className="mb-1 flex justify-between text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                  <span>Schedule position</span>
+                  <span>{schedulePercent}%</span>
+                </div>
+                <div
+                  className="h-1.5 overflow-hidden rounded-full bg-zinc-200/80 dark:bg-zinc-800"
+                  role="progressbar"
+                  aria-valuenow={schedulePercent}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label="Position in program schedule"
+                >
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-all",
+                      isExercise ? "bg-violet-600 dark:bg-violet-500" : "bg-emerald-600 dark:bg-emerald-500",
+                    )}
+                    style={{ width: `${schedulePercent}%` }}
+                  />
+                </div>
+              </div>
+            ) : atStart && weeksTotal ? (
+              <p className="text-[10px] text-zinc-500">Just started · Week 1 of {weeksTotal}</p>
+            ) : null}
+
+            <p className="flex items-center gap-1 text-xs font-medium text-orange-600 opacity-0 transition group-hover:opacity-100 dark:text-orange-400">
+              View full plan
+              <ChevronRight className="size-3.5" aria-hidden />
+            </p>
+
+            {assignment && assignment.plan_sequence > 1 ? (
+              <p className="text-[10px] text-zinc-500">Plan #{assignment.plan_sequence} for this member</p>
+            ) : null}
+          </CardContent>
+        </button>
+
+        {props.mode === "assignment" && assignment && props.onUnlink ? (
+          <div className="flex justify-end border-t border-zinc-200/80 px-4 py-2 dark:border-zinc-800/80">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 text-xs text-zinc-600 hover:bg-rose-50 hover:text-rose-700 dark:text-zinc-400 dark:hover:bg-rose-950/40 dark:hover:text-rose-300"
+              onClick={props.onUnlink}
+            >
+              <Unlink className="size-3.5" aria-hidden />
+              Unlink
+            </Button>
+          </div>
+        ) : null}
       </Card>
-    </button>
+    </div>
   );
 }

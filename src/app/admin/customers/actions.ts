@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { addDaysFromIsoDate, todayUtcIsoDate } from "@/lib/date-term";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/admin";
+import { autoAssignProgramPlansIfReady } from "@/lib/plans/template-matching/auto-assign-after-intake";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   canAssignDedicatedTrainer,
@@ -387,6 +388,21 @@ export async function saveCustomerQuestionnaireSectionAction(payload: {
       finalize,
       previous,
     });
+
+    if (finalize) {
+      const assignReason =
+        formName === "diet_preferences" || formName === "basic_info"
+          ? ("preference_change" as const)
+          : ("initial" as const);
+      const assignOutcome = await autoAssignProgramPlansIfReady(service, profileId, outletId, {
+        reason: assignReason,
+        triggeredBy: ctx.user.id,
+        force: formName === "diet_preferences" || formName === "basic_info",
+      });
+      if (!assignOutcome.skipped && assignOutcome.result?.error) {
+        console.warn("[intake] program plan auto-assign:", assignOutcome.result.error);
+      }
+    }
 
     revalidatePath(dashboardCustomerMembershipPath(membershipId));
     revalidatePath(superadminCustomerMembershipPath(membershipId));

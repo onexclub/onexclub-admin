@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { addDaysFromIsoDate, todayUtcIsoDate } from "@/lib/date-term";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/admin";
+import { autoAssignProgramPlansIfReady } from "@/lib/plans/template-matching/auto-assign-after-intake";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   type AuthDashboardContext,
@@ -22,6 +23,7 @@ import {
   authCallbackRedirectUrlForEmailVerification,
   sendMemberEmailVerificationLink,
 } from "@/lib/email/send-member-email-verification-link";
+import { sendCustomerWelcomeAfterGymOnboard } from "@/lib/email/send-welcome-emails";
 import { parseProfileVitalsFromFormData } from "@/lib/profile/vitals";
 import {
   auditActorOnFirstProfileProvision,
@@ -293,6 +295,47 @@ async function persistQuestionnaireBundle(
       console.error("[onboard] questionnaire upsert failed:", formName, err);
     }
   }
+
+  try {
+    const service = createServiceRoleSupabaseClient();
+    await autoAssignProgramPlansIfReady(service, profileId, outletId, {
+      reason: "initial",
+      triggeredBy: actorId,
+    });
+  } catch (err) {
+    console.error("[onboard] program plan auto-assign failed:", err);
+  }
+}
+
+/** Sends welcome when onboarding completes — only if member has an email on file. */
+async function tryCustomerWelcomeAfterGymOnboard(
+  profileId: string,
+  email?: string | null,
+): Promise<void> {
+  if (!email?.trim()) {
+    console.log(`[email] Profile ${profileId}: no email — skip customer welcome on onboard`);
+    return;
+  }
+
+  try {
+    const result = await sendCustomerWelcomeAfterGymOnboard(profileId);
+    if (result.success) {
+      if ("alreadySent" in result && result.alreadySent) {
+        console.info("[email] Customer welcome already logged for", profileId);
+      } else {
+        const resendId = "resendId" in result ? result.resendId : undefined;
+        console.info("[email] Customer welcome sent on onboard", { profileId, resendId });
+      }
+      return;
+    }
+    if ("reason" in result && result.reason === "resend_not_configured") {
+      console.warn("[email] Customer welcome skipped — Resend not configured");
+      return;
+    }
+    console.warn("[email] Customer welcome after gym onboard:", result);
+  } catch (err) {
+    console.error("[email] Customer welcome after gym onboard:", err);
+  }
 }
 
 /**
@@ -472,6 +515,11 @@ async function executeOnboardMemberInsert(
       actorId: ctx.user.id,
     });
 
+    await tryCustomerWelcomeAfterGymOnboard(
+      existingProfile.id,
+      emailForDb ?? existingProfile.email,
+    );
+
     return {
       ok: true,
       membershipId: membershipResult.membershipId,
@@ -584,6 +632,8 @@ async function executeOnboardMemberInsert(
       }
     }
   }
+
+  await tryCustomerWelcomeAfterGymOnboard(created.user.id, email.length > 0 ? email : null);
 
   return {
     ok: true,

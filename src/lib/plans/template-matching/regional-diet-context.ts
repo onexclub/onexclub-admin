@@ -2,7 +2,8 @@
  * North India regional guidance for AI diet plans + catalogue review.
  * **Reuse:** Prompts in generate-ai-fallback; reference for seed data migrations.
  */
-export const NORTH_INDIA_REGION = "North India (Delhi NCR / Punjab / Haryana / UP)" as const;
+export const NORTH_INDIA_REGION =
+  "North India (Punjab, Delhi NCR, Himachal Pradesh, Haryana)" as const;
 
 /** Preferred staples — locally available, gym-friendly. */
 export const NORTH_INDIA_STAPLES = [
@@ -51,13 +52,13 @@ export function northIndiaMealSchemaExample() {
     meal_time: "08:00",
     meal_type: "breakfast",
     foods: [
-      { name: "Poha", qty: "1 bowl", calories: 180, protein_g: 4, carbs_g: 32, fat_g: 5 },
-      { name: "Dahi", qty: "1 katori", calories: 60, protein_g: 4, carbs_g: 5, fat_g: 2 },
+      { name: "Anda Bhurji", qty: "2 eggs", calories: 180, protein_g: 14, carbs_g: 4, fat_g: 12 },
+      { name: "Roti", qty: "2", calories: 122, protein_g: 5, carbs_g: 30, fat_g: 2 },
     ],
-    calories: 240,
-    protein_g: 8,
-    carbs_g: 37,
-    fat_g: 7,
-    preparation_note: "Light poha with peanuts; unsweetened dahi on side",
+    calories: 302,
+    protein_g: 19,
+    carbs_g: 34,
+    fat_g: 14,
+    preparation_note: "Home-style anda bhurji with phulka — Punjabi/Delhi gym breakfast",
   };
 }

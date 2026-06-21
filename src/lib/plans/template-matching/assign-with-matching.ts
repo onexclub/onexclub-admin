@@ -81,9 +81,7 @@ export async function assignPlansWithMatching(
     }
 
     if (planResult.matchMethod === "ai_generated") {
-      result.warnings!.push(
-        `${planType}: Personalized AI plan assigned — "${template.name}" (pending trainer review).`,
-      );
+      result.warnings!.push(`${planType}: "${template.name}" assigned — coach review pending.`);
     }
 
     const tier = options.existingTier?.[planType] ?? userProfile.level;

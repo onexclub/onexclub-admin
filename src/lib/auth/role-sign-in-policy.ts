@@ -87,12 +87,10 @@ export function isStaffPhoneRequiredForProvisioning(role: AssignableStaffRole): 
   return role === ROLES.RECEPTIONIST || role === ROLES.TRAINER;
 }
 
-/** Short strings for the customer onboard wizard labels / help text. */
-export function customerMemberContactCopy(): { phoneLabel: string; emailLabel: string; blurb: string } {
+/** Short strings for customer contact field labels in onboard / profile forms. */
+export function customerMemberContactCopy(): { phoneLabel: string; emailLabel: string } {
   return {
     phoneLabel: "Mobile (primary login)",
     emailLabel: "Email (optional)",
-    blurb:
-      "Members sign in with Phone OTP in the app. Collect a reachable mobile number; add email only when you want it on file or for a future email channel.",
   };
 }

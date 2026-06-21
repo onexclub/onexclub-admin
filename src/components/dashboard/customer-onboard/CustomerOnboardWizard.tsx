@@ -17,7 +17,6 @@ import { applyExistingCustomerPrefillToDraft } from "@/lib/customers/customer-on
 import { normalizeToE164 } from "@/lib/auth/phone-e164";
 import type { MembershipPlanAdminRow } from "@/lib/admin/membership-plans-admin";
 import type { UserRole } from "@/lib/auth/roles";
-import { customerMemberContactCopy } from "@/lib/auth/role-sign-in-policy";
 import { BMI_BAND_LABEL, bmiBandTone, classifyBmi } from "@/lib/customers/bmi-band";
 import {
   buildQuestionnairePayload,
@@ -119,7 +118,6 @@ export function CustomerOnboardWizard(props: {
     props;
   const router = useRouter();
   const searchParams = useSearchParams();
-  const contactCopy = customerMemberContactCopy();
   const storageKey = draftStorageKey(actorProfileId);
   const defaultOutletId =
     (preferredOutletId && outlets.some((o) => o.id === preferredOutletId) ? preferredOutletId : null) ??
@@ -974,11 +972,11 @@ export function CustomerOnboardWizard(props: {
               </div>
             ) : null}
 
-            <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-400">
-              {draft.linkExistingProfileId
-                ? "You're adding a returning member to this branch. Any updates you made will be saved when you finish."
-                : contactCopy.blurb}
-            </p>
+            {draft.linkExistingProfileId ? (
+              <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-400">
+                You&apos;re adding a returning member to this branch. Any updates you made will be saved when you finish.
+              </p>
+            ) : null}
 
             {state.error ? (
               <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-100">

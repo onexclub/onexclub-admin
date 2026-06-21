@@ -35,10 +35,11 @@ export function WizardFormQuestionsStep(props: {
   const { outletId, formName, answers, onSectionChange, memberGender, headerSlot, highlightInvalid = false, showCompletionSummary = true } = props;
   const { data: definitions, isPending, error } = useOnboardingDefinitions(outletId);
   const copy = SECTION_COPY[formName];
-  /** Memoize — `.filter()` returns a new array every render and was resetting react-hook-form. */
+  const memberContext = useMemo(() => ({ gender: memberGender }), [memberGender]);
+  /** Gender filter only — conditional prompts resolved inside the form from live answers. */
   const defs = useMemo(
-    () => filterQuestionDefinitions(definitions?.[formName] ?? [], { gender: memberGender }),
-    [definitions, formName, memberGender],
+    () => filterQuestionDefinitions(definitions?.[formName] ?? [], memberContext, undefined, { applyShowWhen: false }),
+    [definitions, formName, memberContext],
   );
 
   if (error) {
@@ -69,11 +70,13 @@ export function WizardFormQuestionsStep(props: {
           formName={formName}
           title={copy.title}
           description={copy.description}
-          definitions={defs}
+          allDefinitions={definitions?.[formName] ?? []}
+          sectionDefinitions={defs}
           initialAnswers={answers}
           onSectionChange={onSectionChange}
           highlightInvalid={highlightInvalid}
           showCompletionSummary={showCompletionSummary}
+          memberGender={memberGender}
         />
       )}
     </div>
@@ -101,22 +104,36 @@ function WizardFormQuestionsFields(props: {
   formName: OnboardingFormName;
   title: string;
   description: string;
-  definitions: QuestionDefinition[];
+  allDefinitions: QuestionDefinition[];
+  sectionDefinitions: QuestionDefinition[];
   initialAnswers: Record<string, unknown>;
   onSectionChange: (formName: OnboardingFormName, sectionAnswers: Record<string, unknown>) => void;
   highlightInvalid?: boolean;
   showCompletionSummary?: boolean;
+  memberGender?: ProfileGender | "" | null;
 }) {
-  const { formName, title, description, definitions, initialAnswers, onSectionChange, highlightInvalid = false, showCompletionSummary = true } = props;
+  const {
+    formName,
+    title,
+    description,
+    allDefinitions,
+    sectionDefinitions,
+    initialAnswers,
+    onSectionChange,
+    highlightInvalid = false,
+    showCompletionSummary = true,
+    memberGender,
+  } = props;
+  const memberContext = useMemo(() => ({ gender: memberGender }), [memberGender]);
   const answersSignature = JSON.stringify(initialAnswers);
   const definitionsSignature = useMemo(
-    () => definitions.map((d) => d.id).join(","),
-    [definitions],
+    () => sectionDefinitions.map((d) => d.id).join(","),
+    [sectionDefinitions],
   );
 
   const defaultValues = useMemo(
-    () => buildAnswersDefaultValues(definitions, initialAnswers),
-    [definitions, answersSignature, definitionsSignature], // eslint-disable-line react-hooks/exhaustive-deps
+    () => buildAnswersDefaultValues(sectionDefinitions, initialAnswers),
+    [sectionDefinitions, answersSignature, definitionsSignature], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const form = useForm({
@@ -145,7 +162,14 @@ function WizardFormQuestionsFields(props: {
   }, [answersSignature, definitionsSignature, defaultValues, form, formName, onSectionChange]);
 
   const watched = useWatch({ control: form.control }) as Record<string, unknown>;
-  const completion = useMemo(() => computeSectionCompletion(definitions, watched), [definitions, watched]);
+  const visibleDefinitions = useMemo(
+    () => filterQuestionDefinitions(allDefinitions, memberContext, watched),
+    [allDefinitions, memberContext, watched],
+  );
+  const completion = useMemo(
+    () => computeSectionCompletion(visibleDefinitions, watched),
+    [visibleDefinitions, watched],
+  );
 
   return (
     <section className="space-y-4">
@@ -174,7 +198,7 @@ function WizardFormQuestionsFields(props: {
       </div>
       <FormProvider {...form}>
         <div className="grid gap-6">
-          {definitions.map((definition) => (
+          {visibleDefinitions.map((definition) => (
             <DynamicQuestionRenderer
               key={definition.id}
               definition={definition}

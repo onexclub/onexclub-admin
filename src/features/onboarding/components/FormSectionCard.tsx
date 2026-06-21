@@ -48,9 +48,11 @@ export function FormSectionCard(props: {
   const [serverError, setServerError] = useState<string | null>(null);
   const [highlightInvalid, setHighlightInvalid] = useState(false);
   const errorRef = useRef<HTMLDivElement>(null);
-  const applicableDefinitions = useMemo(
-    () => filterQuestionDefinitions(definitions, { gender: memberGender }),
-    [definitions, memberGender],
+  const memberContext = useMemo(() => ({ gender: memberGender }), [memberGender]);
+  /** All section fields (gender rules only) — keeps conditional keys in the form. */
+  const sectionDefinitions = useMemo(
+    () => filterQuestionDefinitions(definitions, memberContext, undefined, { applyShowWhen: false }),
+    [definitions, memberContext],
   );
   const canView = canViewOnboardingSection(viewer.role, formName);
   const sectionEditable = canEditOnboardingSection(viewer.role, formName);
@@ -60,8 +62,8 @@ export function FormSectionCard(props: {
   const answersSignature = JSON.stringify(parsedExisting);
 
   const defaultValues = useMemo(
-    () => buildAnswersDefaultValues(applicableDefinitions, parsedExisting),
-    [applicableDefinitions, answersSignature],
+    () => buildAnswersDefaultValues(sectionDefinitions, parsedExisting),
+    [sectionDefinitions, answersSignature],
   ); // eslint-disable-line react-hooks/exhaustive-deps -- signature tracks JSON payload
 
   const form = useForm({
@@ -81,9 +83,15 @@ export function FormSectionCard(props: {
     control: form.control,
   }) as Record<string, unknown>;
 
+  /** Reactive list — shows eats_eggs when diet_type = Vegetarian. */
+  const visibleDefinitions = useMemo(
+    () => filterQuestionDefinitions(definitions, memberContext, watched),
+    [definitions, memberContext, watched],
+  );
+
   const completion = useMemo(
-    () => computeSectionCompletion(applicableDefinitions, watched),
-    [applicableDefinitions, watched],
+    () => computeSectionCompletion(visibleDefinitions, watched),
+    [visibleDefinitions, watched],
   );
   const upsertMutation = useUpsertOnboardingSectionMutation(
     viewer.profileId,
@@ -101,7 +109,7 @@ export function FormSectionCard(props: {
     return null;
   }
 
-  if (applicableDefinitions.length === 0) {
+  if (sectionDefinitions.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -126,7 +134,7 @@ export function FormSectionCard(props: {
   };
 
   const serializeErrors = (finalize: boolean) => {
-    const schema = buildSectionAnswersSchema(applicableDefinitions, finalize);
+    const schema = buildSectionAnswersSchema(visibleDefinitions, finalize);
     const parsed = schema.safeParse(form.getValues());
     if (parsed.success) return { ok: true as const, data: parsed.data as Record<string, unknown> };
 
@@ -135,7 +143,7 @@ export function FormSectionCard(props: {
       const pathRoot = Array.isArray(issue.path) && issue.path.length > 0 ? String(issue.path[0]) : undefined;
       if (pathRoot) {
         form.setError(pathRoot as never, { type: "manual", message: issue.message ?? "Invalid value" });
-        const def = applicableDefinitions.find((d) => d.question_key === pathRoot);
+        const def = visibleDefinitions.find((d) => d.question_key === pathRoot);
         if (def && issue.message) {
           messages.push(`${def.label}: ${issue.message}`);
         }
@@ -236,7 +244,7 @@ export function FormSectionCard(props: {
     <>
       <FormProvider {...form}>
         <div className="grid gap-6">
-          {applicableDefinitions.map((definition) => {
+          {visibleDefinitions.map((definition) => {
             const fieldDisabled =
               sectionRoleLocked || (viewer.isCustomerActor && !definition.editable_by_customer);
             return (

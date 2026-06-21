@@ -12,8 +12,12 @@ export type PlanTemplateType = "diet" | "exercise";
 export type UserProfile = {
   profileId: string;
   outletId: string;
-  /** Normalized slug — maps to `plan_templates.primary_goal` */
+  /** Normalized slug — maps to `plan_templates.primary_goal` (canonical catalogue slug) */
   goal: string;
+  /** Intake slug before catalogue mapping (e.g. increase_flexibility) — diagnostics only */
+  goalIntake?: string | null;
+  /** Goal slugs to query in catalogue, best match first — mirrors SQL fallbacks */
+  goalFallbacks: string[];
   /** beginner | intermediate | advanced — maps to `plan_templates.difficulty_level` */
   level: string;
   /** male | female — templates with NULL target_gender match any gender */
@@ -22,8 +26,12 @@ export type UserProfile = {
   injuries: string[];
   /** Food allergy tags — hard filter for diet; triggers safe fallback when AI generates */
   allergies: string[];
-  /** Hard filter for diet plans — normalized slug from diet_type intake (e.g. non_vegetarian) */
+  /** Hard filter — base diet slug from intake (vegetarian, non_vegetarian, vegan) */
   dietPreference?: string | null;
+  /** Vegetarian only — true = include eggs (anda) in meal plans */
+  eatsEggs?: boolean | null;
+  /** Optional style: keto, intermittent_fasting, pescatarian */
+  specialDiet?: string | null;
   /** Available equipment slugs — soft score for exercise plans */
   equipment?: string[];
   intakeScore?: number;

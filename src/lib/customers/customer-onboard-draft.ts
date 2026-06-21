@@ -280,7 +280,11 @@ export function buildQuestionnairePayload(
   if (!definitions) return payload;
 
   for (const formName of ONBOARDING_FORMS_IN_ORDER) {
-    const defs = filterQuestionDefinitions(definitions[formName] ?? [], memberContext ?? EMPTY_MEMBER_QUESTION_CONTEXT);
+    const defs = filterQuestionDefinitions(
+      definitions[formName] ?? [],
+      memberContext ?? EMPTY_MEMBER_QUESTION_CONTEXT,
+      answers[formName] ?? {},
+    );
     /** Gender-filtered empty sections still persist so `intake_sections_complete` can succeed. */
     if (!defs.length) {
       payload[formName] = {};

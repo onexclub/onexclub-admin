@@ -7,6 +7,7 @@ import { loadProgramPlanTemplateDetailAction } from "@/app/admin/customers/progr
 import type { ProgramPlanDetailSelection } from "@/lib/customers/program-plan-detail-selection";
 import { Badge } from "@/components/ui/badge";
 import { formatProgramGoal } from "@/lib/customers/customer-program-plans";
+import { textForPlanUi } from "@/lib/customers/format-plan-description";
 import type { ProgramPlanTemplateDetail } from "@/lib/customers/program-plan-template-detail";
 import { formatMealTypeLabel, parseMealFoods } from "@/lib/customers/program-plan-template-detail";
 import { cn } from "@/lib/utils/cn";
@@ -133,6 +134,7 @@ export function ProgramPlanTemplateDetailDialog(props: {
             <div className="space-y-3">
               {detail.weeks.map((week) => {
                 const openWeek = expandedWeek === week.week_number;
+                const weekTitle = textForPlanUi(week.title);
                 return (
                   <div
                     key={week.id}
@@ -150,7 +152,7 @@ export function ProgramPlanTemplateDetailDialog(props: {
                       )}
                       <span className="font-semibold text-zinc-900 dark:text-zinc-50">
                         Week {week.week_number}
-                        {week.title ? ` · ${week.title}` : ""}
+                        {weekTitle ? ` · ${weekTitle}` : ""}
                       </span>
                       <span className="ml-auto text-xs text-zinc-500">{week.days.length} days</span>
                     </button>
@@ -165,9 +167,12 @@ export function ProgramPlanTemplateDetailDialog(props: {
                               </p>
                               {day.is_rest_day ? <Badge variant="warning">Rest</Badge> : null}
                             </div>
-                            {day.overview ? (
-                              <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">{day.overview}</p>
-                            ) : null}
+                            {(() => {
+                              const overview = textForPlanUi(day.overview);
+                              return overview ? (
+                                <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">{overview}</p>
+                              ) : null;
+                            })()}
 
                             {day.targets && !isExercise ? (
                               <p className="mt-2 text-xs text-zinc-500">
@@ -245,9 +250,12 @@ export function ProgramPlanTemplateDetailDialog(props: {
                                           ))}
                                         </ul>
                                       ) : null}
-                                      {meal.preparation_note ? (
-                                        <p className="mt-2 text-xs italic text-zinc-500">{meal.preparation_note}</p>
-                                      ) : null}
+                                      {(() => {
+                                        const note = textForPlanUi(meal.preparation_note);
+                                        return note ? (
+                                          <p className="mt-2 text-xs italic text-zinc-500">{note}</p>
+                                        ) : null;
+                                      })()}
                                       <p className="mt-2 text-xs font-medium text-zinc-500">
                                         Meal total:{" "}
                                         {[

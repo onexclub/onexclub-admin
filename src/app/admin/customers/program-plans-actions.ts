@@ -5,6 +5,11 @@ import { revalidatePath } from "next/cache";
 import { canAssignCustomerProgramPlans } from "@/lib/auth/roles";
 import { fetchIntakeCompleteForPrograms } from "@/lib/customers/customer-program-plans";
 import { assignPlansWithMatching } from "@/lib/plans/template-matching/assign-with-matching";
+import {
+  removeActiveProgramPlanAssignments,
+  type RemoveProgramPlanScope,
+} from "@/lib/customers/remove-program-plan-assignments";
+import { toUserFacingError } from "@/lib/errors/user-facing";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { canManageOutletForBranchAdmin, getAuthDashboardContext } from "@/services/auth.service";
@@ -20,6 +25,18 @@ export type AssignCustomerProgramPlansState = {
   /** Parsed RPC payload when assignment succeeds — optional for UI toasts. */
   result?: Record<string, unknown>;
 };
+
+export type RemoveCustomerProgramPlansState = {
+  error?: string;
+  success?: string;
+};
+
+function revalidateProgramPlanPaths(membershipId: string) {
+  revalidatePath(ROUTES.dashboardCustomers);
+  revalidatePath(ROUTES.superadminCustomers);
+  revalidatePath(dashboardCustomerMembershipPath(membershipId));
+  revalidatePath(superadminCustomerMembershipPath(membershipId));
+}
 
 /**
  * Manually match / rotate exercise + diet templates via `assign_or_rotate_plans`.
@@ -91,10 +108,7 @@ export async function assignCustomerProgramPlansAction(
   const exerciseName = matchResult.exercise?.planName;
   const dietName = matchResult.diet?.planName;
 
-  revalidatePath(ROUTES.dashboardCustomers);
-  revalidatePath(ROUTES.superadminCustomers);
-  revalidatePath(dashboardCustomerMembershipPath(membershipId));
-  revalidatePath(superadminCustomerMembershipPath(membershipId));
+  revalidateProgramPlanPaths(membershipId);
 
   const parts: string[] = [];
   if (typeof exerciseName === "string") parts.push(`Exercise: ${exerciseName}`);
@@ -109,4 +123,66 @@ export async function assignCustomerProgramPlansAction(
         : "Program plans updated.",
     result: payload,
   };
+}
+
+/**
+ * Unlink active exercise/diet template assignments without assigning replacements.
+ * History is retained (`cancelled` + soft delete) for audit.
+ */
+export async function removeCustomerProgramPlansAction(
+  _prev: RemoveCustomerProgramPlansState,
+  formData: FormData,
+): Promise<RemoveCustomerProgramPlansState> {
+  const ctx = await getAuthDashboardContext();
+  if (!ctx.user || !canAssignCustomerProgramPlans(ctx.appRole)) {
+    return { error: "You do not have permission to remove program plans." };
+  }
+
+  const membershipId = String(formData.get("membership_id") ?? "").trim();
+  const profileId = String(formData.get("profile_id") ?? "").trim();
+  const outletId = String(formData.get("outlet_id") ?? "").trim();
+  const scopeRaw = String(formData.get("scope") ?? "").trim() as RemoveProgramPlanScope;
+
+  if (!membershipId || !profileId || !outletId) {
+    return { error: "Missing member context." };
+  }
+
+  if (scopeRaw !== "exercise" && scopeRaw !== "diet" && scopeRaw !== "both") {
+    return { error: "Choose which program to remove." };
+  }
+
+  if (!canManageOutletForBranchAdmin(ctx, outletId)) {
+    return { error: "You cannot manage program plans for that branch." };
+  }
+
+  try {
+    const adminSupabase = createServiceRoleSupabaseClient();
+    const { removed, removedLabels } = await removeActiveProgramPlanAssignments(adminSupabase, {
+      profileId,
+      outletId,
+      scope: scopeRaw,
+      triggeredBy: ctx.user.id,
+    });
+
+    if (!removed.length) {
+      const label =
+        scopeRaw === "both"
+          ? "program plans"
+          : scopeRaw === "exercise"
+            ? "exercise program"
+            : "diet program";
+      return { error: `No active ${label} to remove.` };
+    }
+
+    revalidateProgramPlanPaths(membershipId);
+
+    return {
+      success:
+        removed.length === 2
+          ? "Exercise and diet programs unlinked."
+          : `Unlinked — ${removedLabels.join(" · ")}`,
+    };
+  } catch (err) {
+    return { error: toUserFacingError(err, "Could not remove program plans. Please try again.") };
+  }
 }
