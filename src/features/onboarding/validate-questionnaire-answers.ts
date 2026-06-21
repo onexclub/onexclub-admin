@@ -1,12 +1,27 @@
 import { buildSectionAnswersSchema } from "./build-answers-schema";
 import { ONBOARDING_FORMS_IN_ORDER } from "./constants";
 import { buildAnswersDefaultValues } from "./components/onboarding-defaults";
+import { isAnswerProvided } from "./completion";
 import {
   EMPTY_MEMBER_QUESTION_CONTEXT,
   filterQuestionDefinitions,
   type MemberQuestionContext,
 } from "./question-visibility";
 import type { OnboardingFormName, QuestionDefinition } from "./types";
+
+/** Required question keys still empty after normalization — used for inline field highlights. */
+export function getInvalidQuestionKeys(
+  definitions: Record<OnboardingFormName, QuestionDefinition[]>,
+  formName: OnboardingFormName,
+  answers: Partial<Record<OnboardingFormName, Record<string, unknown>>>,
+  memberContext?: MemberQuestionContext,
+): string[] {
+  const defs = filterQuestionDefinitions(definitions[formName] ?? [], memberContext ?? EMPTY_MEMBER_QUESTION_CONTEXT);
+  const values = buildAnswersDefaultValues(defs, answers[formName] ?? {});
+  return defs
+    .filter((d) => d.is_required && !isAnswerProvided(values[d.question_key]))
+    .map((d) => d.question_key);
+}
 
 export function validateQuestionnaireSection(
   definitions: Record<OnboardingFormName, QuestionDefinition[]>,

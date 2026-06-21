@@ -21,6 +21,9 @@ import {
 } from "@/lib/customers/customer-lookup";
 import { toUserFacingError } from "@/lib/errors/user-facing";
 import { normalizeToE164 } from "@/lib/auth/phone-e164";
+import { canEditOnboardingSection } from "@/features/onboarding/permissions";
+import { fetchResponsesBundle, upsertQuestionsResponse } from "@/features/onboarding/question-responses.service";
+import type { OnboardingFormName } from "@/features/onboarding/types";
 import { ROUTES, dashboardCustomerMembershipPath, superadminCustomerMembershipPath } from "@/utils/routes";
 
 export type AssignMembershipPlanState = { error?: string; success?: string };
@@ -327,13 +330,70 @@ export async function updateCustomerProfileAction(
     return { error: "Could not save member details. Confirm this member belongs to your branch." };
   }
 
-  revalidatePath(ROUTES.adminCustomers);
-  revalidatePath(ROUTES.dashboardCustomers);
-  if (membershipRecordId.length) {
-    revalidatePath(dashboardCustomerMembershipPath(membershipRecordId));
-    revalidatePath(superadminCustomerMembershipPath(membershipRecordId));
+  const skipRevalidate = String(formData.get("skip_revalidate") ?? "") === "1";
+  if (!skipRevalidate) {
+    revalidatePath(ROUTES.adminCustomers);
+    revalidatePath(ROUTES.dashboardCustomers);
+    if (membershipRecordId.length) {
+      revalidatePath(dashboardCustomerMembershipPath(membershipRecordId));
+      revalidatePath(superadminCustomerMembershipPath(membershipRecordId));
+    }
+    revalidatePath(ROUTES.superadminCustomers);
+    revalidatePath(ROUTES.dashboard);
   }
-  revalidatePath(ROUTES.superadminCustomers);
-  revalidatePath(ROUTES.dashboard);
   return { success: "Customer profile updated." };
+}
+
+export type SaveQuestionnaireSectionState = { error?: string; success?: boolean };
+
+/**
+ * Staff dashboard — persist intake answers with service role (same path as onboard wizard).
+ * Client-side PostgREST upserts can fail RLS/trigger edge cases; this action mirrors onboarding.
+ */
+export async function saveCustomerQuestionnaireSectionAction(payload: {
+  profileId: string;
+  outletId: string;
+  membershipId: string;
+  formName: OnboardingFormName;
+  answers: Record<string, unknown>;
+  finalize: boolean;
+}): Promise<SaveQuestionnaireSectionState> {
+  const ctx = await getAuthDashboardContext();
+  if (!ctx.user) return { error: "Sign in required." };
+  if (!canEditOnboardingSection(ctx.appRole, payload.formName)) {
+    return { error: "Your role cannot update this intake section." };
+  }
+  if (!canManageOutletForBranchAdmin(ctx, payload.outletId)) {
+    return { error: "This member is outside your branch scope." };
+  }
+
+  const { profileId, outletId, membershipId, formName, answers, finalize } = payload;
+  if (!profileId || !outletId || !formName) {
+    return { error: "Missing member or section context." };
+  }
+
+  try {
+    const service = createServiceRoleSupabaseClient();
+    const bundle = await fetchResponsesBundle(service, profileId, outletId);
+    const previous = bundle[formName] ?? null;
+
+    await upsertQuestionsResponse({
+      supabase: service,
+      profileId,
+      outletId,
+      formName,
+      answers,
+      actorProfileId: ctx.user.id,
+      finalize,
+      previous,
+    });
+
+    revalidatePath(dashboardCustomerMembershipPath(membershipId));
+    revalidatePath(superadminCustomerMembershipPath(membershipId));
+    revalidatePath(ROUTES.dashboardCustomers);
+    revalidatePath(ROUTES.adminCustomers);
+    return { success: true };
+  } catch (err) {
+    return { error: toUserFacingError(err, "Could not save intake answers. Please try again.") };
+  }
 }

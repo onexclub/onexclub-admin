@@ -17,8 +17,10 @@ function numericBounds(d: QuestionDefinition): { min: number; max: number; step?
 export function primitiveForQuestion(d: QuestionDefinition): z.ZodTypeAny {
   switch (d.input_type) {
     case "boolean":
-      /** HTML forms sometimes emit boolean-ish strings — keep strict-ish but resilient. */
-      return z.boolean();
+      return z.preprocess(
+        (v) => v === true || v === "true" || v === 1 || v === "1",
+        z.boolean(),
+      );
     case "number":
     case "scale": {
       const bounds =
@@ -66,7 +68,7 @@ export function buildSectionAnswersSchema(defs: QuestionDefinition[], finalize: 
       if (empty) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "Required",
+          message: "This field is required",
           path: [d.question_key],
         });
       }

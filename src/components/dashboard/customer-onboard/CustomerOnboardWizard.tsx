@@ -76,6 +76,8 @@ const initialWizard: OnboardMemberWizardState = {};
 const labelCn = "text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400";
 const inputCn =
   "mt-1.5 w-full rounded-lg border border-zinc-200 bg-zinc-50/80 px-3.5 py-2.5 text-sm text-zinc-900 outline-none ring-orange-500/25 transition focus:border-orange-500 focus:bg-white focus:ring-4 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-50 dark:focus:bg-zinc-950";
+const invalidFieldCn =
+  "border-rose-500 ring-2 ring-rose-500/20 focus:border-rose-500 focus:ring-rose-500/25 dark:border-rose-500";
 const selectedTileCn =
   "border-orange-600 bg-orange-50 dark:border-orange-500 dark:bg-orange-950/40";
 
@@ -140,6 +142,8 @@ export function CustomerOnboardWizard(props: {
   const [lookupMatch, setLookupMatch] = useState<ExistingCustomerMatch | null>(null);
   /** Kept after link confirm so Membership step can warn about same-branch onboard. */
   const [linkedGymHistory, setLinkedGymHistory] = useState<CustomerGymHistoryEntry[]>([]);
+  /** After Continue on intake steps — empty mandatory fields get a red border. */
+  const [highlightInvalidFields, setHighlightInvalidFields] = useState(false);
 
   const selectedOutletMembershipNotice = useMemo(() => {
     if (!draft.linkExistingProfileId || !linkedGymHistory.length) return null;
@@ -426,29 +430,28 @@ export function CustomerOnboardWizard(props: {
     }
 
     const formName = INTAKE_STEP_FORM[draft.step];
-    if (draft.step === 2 && !hasValidOnboardBodyMetrics(draft.health)) {
-      setStepError("Height (cm) and weight (kg) are required.");
+    const vitalsInvalid = draft.step === 2 && !hasValidOnboardBodyMetrics(draft.health);
+    const questionnaireInvalid =
+      formName &&
+      questionDefinitions &&
+      !validateQuestionnaireSection(
+        questionDefinitions,
+        formName,
+        draft.questionnaireAnswers,
+        memberQuestionContext,
+      );
+
+    if (vitalsInvalid || questionnaireInvalid) {
+      setHighlightInvalidFields(true);
+      setStepError(null);
       return;
     }
-    if (formName && questionDefinitions) {
-      if (
-        !validateQuestionnaireSection(
-          questionDefinitions,
-          formName,
-          draft.questionnaireAnswers,
-          memberQuestionContext,
-        )
-      ) {
-        setStepError(`Complete all required fields in “${SECTION_COPY[formName].title}”.`);
-        return;
-      }
-    }
+
+    setHighlightInvalidFields(false);
     setStepError(null);
     if (!stepValid) {
       if (draft.step === 0 && !draft.identity.gender) {
         setStepError("Please select a gender before continuing.");
-      } else if (draft.step === 2 && !hasValidOnboardBodyMetrics(draft.health)) {
-        setStepError("Height (cm) and weight (kg) are required.");
       }
       return;
     }
@@ -460,6 +463,8 @@ export function CustomerOnboardWizard(props: {
       router.push(ROUTES.dashboardCustomers);
       return;
     }
+    setHighlightInvalidFields(false);
+    setStepError(null);
     patch({ step: Math.max(0, draft.step - 1) });
   };
 
@@ -602,7 +607,9 @@ export function CustomerOnboardWizard(props: {
               </label>
             </div>
             <div>
-              <span className={labelCn}>Gender (required)</span>
+              <span className={labelCn}>
+                Gender <span className="text-rose-600 dark:text-rose-400">*</span>
+              </span>
               <div className="mt-2 grid grid-cols-3 gap-2">
                 {MEMBER_INTAKE_GENDER_OPTIONS.map((o) => (
                   <button
@@ -715,11 +722,6 @@ export function CustomerOnboardWizard(props: {
         {/* Step 2 — Basic Info (vitals + basic_info questions) */}
         {draft.step === 2 ? (
           <div className="space-y-4">
-            {stepError ? (
-              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
-                {stepError}
-              </p>
-            ) : null}
             {draft.membership.outletId ? (
               <WizardFormQuestionsStep
                 outletId={draft.membership.outletId}
@@ -727,12 +729,21 @@ export function CustomerOnboardWizard(props: {
                 memberGender={draft.identity.gender}
                 answers={draft.questionnaireAnswers.basic_info ?? {}}
                 onSectionChange={onQuestionnaireSectionChange}
+                highlightInvalid={highlightInvalidFields}
+                showCompletionSummary={false}
                 headerSlot={
                   <div className="grid gap-5 sm:grid-cols-2">
                     <label className="block">
-                      <span className={labelCn}>Height (cm) (required)</span>
+                      <span className={labelCn}>
+                        Height (cm) <span className="text-rose-600 dark:text-rose-400">*</span>
+                      </span>
                       <input
-                        className={inputCn}
+                        className={cn(
+                          inputCn,
+                          highlightInvalidFields && !hasValidOnboardBodyMetrics(draft.health) && !draft.health.heightCm.trim()
+                            ? invalidFieldCn
+                            : "",
+                        )}
                         type="number"
                         min={50}
                         max={280}
@@ -740,12 +751,22 @@ export function CustomerOnboardWizard(props: {
                         value={draft.health.heightCm}
                         onChange={(e) => patchHealth({ heightCm: e.target.value })}
                         placeholder="175"
+                        aria-invalid={
+                          highlightInvalidFields && !draft.health.heightCm.trim() ? true : undefined
+                        }
                       />
                     </label>
                     <label className="block">
-                      <span className={labelCn}>Weight (kg) (required)</span>
+                      <span className={labelCn}>
+                        Weight (kg) <span className="text-rose-600 dark:text-rose-400">*</span>
+                      </span>
                       <input
-                        className={inputCn}
+                        className={cn(
+                          inputCn,
+                          highlightInvalidFields && !hasValidOnboardBodyMetrics(draft.health) && !draft.health.weightKg.trim()
+                            ? invalidFieldCn
+                            : "",
+                        )}
                         type="number"
                         min={20}
                         max={400}
@@ -753,6 +774,9 @@ export function CustomerOnboardWizard(props: {
                         value={draft.health.weightKg}
                         onChange={(e) => patchHealth({ weightKg: e.target.value })}
                         placeholder="72.5"
+                        aria-invalid={
+                          highlightInvalidFields && !draft.health.weightKg.trim() ? true : undefined
+                        }
                       />
                     </label>
                     <div className="overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50 sm:col-span-2 dark:border-zinc-700 dark:bg-zinc-900/60">
@@ -778,11 +802,6 @@ export function CustomerOnboardWizard(props: {
         {/* Step 3 — Health Screening */}
         {draft.step === 3 ? (
           <div className="space-y-4">
-            {stepError ? (
-              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
-                {stepError}
-              </p>
-            ) : null}
             {draft.membership.outletId ? (
               <WizardFormQuestionsStep
                 outletId={draft.membership.outletId}
@@ -790,6 +809,8 @@ export function CustomerOnboardWizard(props: {
                 memberGender={draft.identity.gender}
                 answers={draft.questionnaireAnswers.health_screening ?? {}}
                 onSectionChange={onQuestionnaireSectionChange}
+                highlightInvalid={highlightInvalidFields}
+                showCompletionSummary={false}
               />
             ) : (
               <p className="text-sm text-zinc-600">Pick an outlet on the Membership step first.</p>
@@ -800,11 +821,6 @@ export function CustomerOnboardWizard(props: {
         {/* Step 4 — Diet Preferences */}
         {draft.step === 4 ? (
           <div className="space-y-4">
-            {stepError ? (
-              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
-                {stepError}
-              </p>
-            ) : null}
             {draft.membership.outletId ? (
               <WizardFormQuestionsStep
                 outletId={draft.membership.outletId}
@@ -812,6 +828,8 @@ export function CustomerOnboardWizard(props: {
                 memberGender={draft.identity.gender}
                 answers={draft.questionnaireAnswers.diet_preferences ?? {}}
                 onSectionChange={onQuestionnaireSectionChange}
+                highlightInvalid={highlightInvalidFields}
+                showCompletionSummary={false}
               />
             ) : (
               <p className="text-sm text-zinc-600">Pick an outlet on the Membership step first.</p>
@@ -1004,7 +1022,7 @@ export function CustomerOnboardWizard(props: {
             <Button
               type="button"
               onClick={goNext}
-              disabled={!stepValid || lookupPending}
+              disabled={lookupPending || (draft.step >= 2 && definitionsLoading)}
               size="lg"
               className="rounded-xl"
             >

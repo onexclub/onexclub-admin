@@ -27,8 +27,12 @@ export function WizardFormQuestionsStep(props: {
   /** From Identity step / profile — drives `question_definitions.visibility_json`. */
   memberGender?: ProfileGender | "" | null;
   headerSlot?: ReactNode;
+  /** Highlight empty mandatory fields (after Continue / validation attempt). */
+  highlightInvalid?: boolean;
+  /** Hide completion counter — wizard uses field asterisks instead. */
+  showCompletionSummary?: boolean;
 }) {
-  const { outletId, formName, answers, onSectionChange, memberGender, headerSlot } = props;
+  const { outletId, formName, answers, onSectionChange, memberGender, headerSlot, highlightInvalid = false, showCompletionSummary = true } = props;
   const { data: definitions, isPending, error } = useOnboardingDefinitions(outletId);
   const copy = SECTION_COPY[formName];
   /** Memoize — `.filter()` returns a new array every render and was resetting react-hook-form. */
@@ -68,6 +72,8 @@ export function WizardFormQuestionsStep(props: {
           definitions={defs}
           initialAnswers={answers}
           onSectionChange={onSectionChange}
+          highlightInvalid={highlightInvalid}
+          showCompletionSummary={showCompletionSummary}
         />
       )}
     </div>
@@ -98,8 +104,10 @@ function WizardFormQuestionsFields(props: {
   definitions: QuestionDefinition[];
   initialAnswers: Record<string, unknown>;
   onSectionChange: (formName: OnboardingFormName, sectionAnswers: Record<string, unknown>) => void;
+  highlightInvalid?: boolean;
+  showCompletionSummary?: boolean;
 }) {
-  const { formName, title, description, definitions, initialAnswers, onSectionChange } = props;
+  const { formName, title, description, definitions, initialAnswers, onSectionChange, highlightInvalid = false, showCompletionSummary = true } = props;
   const answersSignature = JSON.stringify(initialAnswers);
   const definitionsSignature = useMemo(
     () => definitions.map((d) => d.id).join(","),
@@ -143,27 +151,36 @@ function WizardFormQuestionsFields(props: {
     <section className="space-y-4">
       <div>
         <p className="text-xs text-zinc-600 dark:text-zinc-400">{description}</p>
-        <p className="mt-2 text-xs text-zinc-500">
-          Required {completion.requiredAnswered}/{completion.requiredTotal} ({completion.percentRequired}%)
-        </p>
-        <div
-          className="mt-2 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"
-          role="progressbar"
-          aria-valuenow={completion.percentRequired}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label={`${title} required completion`}
-        >
-          <div
-            className={cn("h-full rounded-full bg-orange-600 transition-all duration-300 dark:bg-orange-500")}
-            style={{ width: `${completion.percentRequired}%` }}
-          />
-        </div>
+        {showCompletionSummary ? (
+          <>
+            <p className="mt-2 text-xs text-zinc-500">
+              Mandatory {completion.requiredAnswered}/{completion.requiredTotal} ({completion.percentRequired}%)
+            </p>
+            <div
+              className="mt-2 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"
+              role="progressbar"
+              aria-valuenow={completion.percentRequired}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={`${title} mandatory completion`}
+            >
+              <div
+                className={cn("h-full rounded-full bg-orange-600 transition-all duration-300 dark:bg-orange-500")}
+                style={{ width: `${completion.percentRequired}%` }}
+              />
+            </div>
+          </>
+        ) : null}
       </div>
       <FormProvider {...form}>
         <div className="grid gap-6">
           {definitions.map((definition) => (
-            <DynamicQuestionRenderer key={definition.id} definition={definition} disabled={false} />
+            <DynamicQuestionRenderer
+              key={definition.id}
+              definition={definition}
+              disabled={false}
+              highlightInvalid={highlightInvalid}
+            />
           ))}
         </div>
       </FormProvider>

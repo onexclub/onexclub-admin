@@ -7,9 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 
+import { isAnswerProvided } from "@/features/onboarding/completion";
 import type { QuestionDefinition } from "@/features/onboarding/types";
 
 import { cn } from "@/lib/utils/cn";
+
+const invalidFieldCn =
+  "border-rose-500 ring-2 ring-rose-500/20 focus-visible:border-rose-500 focus-visible:ring-rose-500/25 dark:border-rose-500";
 
 function boundsFor(def: QuestionDefinition): { min: number; max: number; step: number } {
   const raw = def.validation_json;
@@ -23,41 +27,67 @@ function boundsFor(def: QuestionDefinition): { min: number; max: number; step: n
  * Bridges `question_definitions.input_type` to shadcn-styled primitives (mobile-safe range + native `<select>`).
  *
  * **Reusability:** use this renderer for kiosk / tablet flows and mirror it in Flutter if you want parity.
+ * Required fields show a `*` on the label; empty required fields get a red border when `highlightInvalid` is set.
  */
-export function DynamicQuestionRenderer({ definition: def, disabled }: { definition: QuestionDefinition; disabled: boolean }) {
+export function DynamicQuestionRenderer({
+  definition: def,
+  disabled,
+  highlightInvalid = false,
+}: {
+  definition: QuestionDefinition;
+  disabled: boolean;
+  highlightInvalid?: boolean;
+}) {
   const { control } = useFormContext();
 
   return (
     <FormField
       control={control}
       name={def.question_key}
-      render={({ field, fieldState }) => (
-        <FormItem className="space-y-3">
-          <FormLabel className="flex flex-col gap-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-            <span>{def.label}</span>
-            {def.is_required ? <span className="text-xs font-normal text-rose-600 dark:text-rose-400">Required</span> : null}
-          </FormLabel>
-          {def.helper_text ? <p className="text-xs text-zinc-500 dark:text-zinc-400">{def.helper_text}</p> : null}
-          <FormControl>
-            {renderInput(field, fieldState.error?.message ?? null, disabled, def)}
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )}
+      render={({ field, fieldState }) => {
+        const missingRequired = def.is_required && !isAnswerProvided(field.value);
+        const invalid = Boolean(fieldState.error) || (highlightInvalid && missingRequired);
+        const showMessage =
+          fieldState.error?.message && fieldState.error.message !== "This field is required";
+
+        return (
+          <FormItem className="space-y-3">
+            <FormLabel className="flex flex-wrap items-baseline gap-0.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+              <span>{def.label}</span>
+              {def.is_required ? (
+                <span className="font-normal text-rose-600 dark:text-rose-400" aria-hidden>
+                  *
+                </span>
+              ) : null}
+              {def.is_required ? <span className="sr-only"> (required)</span> : null}
+            </FormLabel>
+            {def.helper_text ? <p className="text-xs text-zinc-500 dark:text-zinc-400">{def.helper_text}</p> : null}
+            <FormControl>
+              {renderInput(field, disabled, def, invalid)}
+            </FormControl>
+            {showMessage ? <FormMessage /> : null}
+          </FormItem>
+        );
+      }}
     />
   );
 }
 
 function renderInput(
   field: { value: unknown; onChange: (v: unknown) => void; onBlur: () => void; name?: string; ref?: React.RefCallback<HTMLElement> },
-  _: string | null,
   disabled: boolean,
   def: QuestionDefinition,
+  invalid: boolean,
 ) {
   switch (def.input_type) {
     case "boolean":
       return (
-        <div className="flex items-center gap-3 rounded-lg border border-zinc-200 px-3 py-3 dark:border-zinc-800">
+        <div
+          className={cn(
+            "flex items-center gap-3 rounded-lg border px-3 py-3 dark:border-zinc-800",
+            invalid ? invalidFieldCn : "border-zinc-200",
+          )}
+        >
           <Switch checked={Boolean(field.value)} onCheckedChange={field.onChange} disabled={disabled} />
           <span className="text-sm text-zinc-700 dark:text-zinc-200">{field.value ? "Yes" : "No"}</span>
         </div>
@@ -67,11 +97,12 @@ function renderInput(
         <Textarea
           rows={5}
           {...field}
-          className={cn(disabled ? "opacity-70" : "")}
+          className={cn(disabled ? "opacity-70" : "", invalid && invalidFieldCn)}
           value={typeof field.value === "string" ? field.value : ""}
           disabled={disabled}
           onChange={(e) => field.onChange(e.target.value)}
           onBlur={field.onBlur}
+          aria-invalid={invalid || undefined}
         />
       );
     case "number":
@@ -82,6 +113,8 @@ function renderInput(
           step={boundsFor(def).step}
           value={typeof field.value === "number" || typeof field.value === "string" ? field.value : ""}
           disabled={disabled}
+          className={cn(invalid && invalidFieldCn)}
+          aria-invalid={invalid || undefined}
           onChange={(e) => field.onChange(e.target.value)}
           onBlur={field.onBlur}
         />
@@ -95,7 +128,7 @@ function renderInput(
             ? Number(field.value || min)
             : min;
       return (
-        <div className="space-y-3">
+        <div className={cn("space-y-3 rounded-lg", invalid && "ring-2 ring-rose-500/20")}>
           <input
             type="range"
             min={min}
@@ -104,9 +137,11 @@ function renderInput(
             className={cn(
               "h-3 w-full touch-pan-x cursor-pointer accent-orange-600 disabled:opacity-60 dark:accent-orange-500",
               disabled && "cursor-not-allowed",
+              invalid && "accent-rose-600",
             )}
             value={Number.isFinite(numeric) ? numeric : min}
             disabled={disabled}
+            aria-invalid={invalid || undefined}
             onChange={(e) => field.onChange(Number(e.target.value))}
             onBlur={field.onBlur}
           />
@@ -123,10 +158,12 @@ function renderInput(
       return (
         <select
           className={cn(
-            "min-h-[2.75rem] w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none ring-orange-500/20 focus-visible:border-orange-500 focus-visible:ring-4 disabled:opacity-70 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50",
+            "min-h-[2.75rem] w-full rounded-lg border bg-white px-3 py-2 text-sm text-zinc-900 outline-none ring-orange-500/20 focus-visible:border-orange-500 focus-visible:ring-4 disabled:opacity-70 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50",
+            invalid ? invalidFieldCn : "border-zinc-300",
           )}
           disabled={disabled}
           value={(field.value as string) ?? ""}
+          aria-invalid={invalid || undefined}
           onBlur={field.onBlur}
           onChange={(e) => field.onChange(e.target.value)}
         >
@@ -140,7 +177,13 @@ function renderInput(
       );
     case "multiselect":
       return (
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div
+          className={cn(
+            "grid gap-2 sm:grid-cols-2 rounded-lg",
+            invalid && "ring-2 ring-rose-500/20 p-1 -m-1",
+          )}
+          aria-invalid={invalid || undefined}
+        >
           {(def.options_json ?? []).map((opt) => {
             const current: string[] = Array.isArray(field.value) ? (field.value as string[]) : [];
             const checked = current.includes(opt.value);
@@ -168,7 +211,9 @@ function renderInput(
                   "flex min-h-[2.75rem] cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm shadow-sm outline-none focus-visible:ring-4 focus-visible:ring-orange-500/20",
                   checked
                     ? "border-orange-500 bg-orange-50 text-orange-950 dark:bg-orange-950/40 dark:text-orange-50"
-                    : "border-zinc-200 bg-white text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100",
+                    : invalid
+                      ? "border-rose-300 bg-white text-zinc-900 dark:border-rose-800 dark:bg-zinc-950 dark:text-zinc-100"
+                      : "border-zinc-200 bg-white text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100",
                   disabled && "pointer-events-none cursor-not-allowed opacity-60",
                 )}
               >

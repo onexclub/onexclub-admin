@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 
 import { canAssignCustomerProgramPlans } from "@/lib/auth/roles";
 import { fetchIntakeCompleteForPrograms } from "@/lib/customers/customer-program-plans";
+import { assignPlansWithMatching } from "@/lib/plans/template-matching/assign-with-matching";
+import { createServiceRoleSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { canManageOutletForBranchAdmin, getAuthDashboardContext } from "@/services/auth.service";
 import {
@@ -64,21 +66,30 @@ export async function assignCustomerProgramPlansAction(
   const hasActive = hasActiveRaw === "1" || hasActiveRaw === "true";
   const reason = hasActive ? "preference_change" : "initial";
 
-  const { data, error } = await supabase.rpc("assign_or_rotate_plans", {
-    p_profile_id: profileId,
-    p_outlet_id: outletId,
-    p_form_name: "basic_info",
-    p_reason: reason,
-    p_triggered_by: ctx.user.id,
+  // Hard-filter + soft-score matching with Groq AI fallback (server-side, Node.js)
+  const adminSupabase = createServiceRoleSupabaseClient();
+  const matchResult = await assignPlansWithMatching(adminSupabase, profileId, outletId, {
+    reason,
+    triggeredBy: ctx.user.id,
   });
 
-  if (error) {
-    return { error: error.message };
+  if (matchResult.error) {
+    return {
+      error: matchResult.error,
+      result: { failures: matchResult.failures, warnings: matchResult.warnings },
+    };
   }
 
-  const payload = (typeof data === "object" && data !== null ? data : {}) as Record<string, unknown>;
-  const exerciseName = payload.exercise_plan_name;
-  const dietName = payload.diet_plan_name;
+  const payload: Record<string, unknown> = {
+    exercise_plan_name: matchResult.exercise?.planName,
+    diet_plan_name: matchResult.diet?.planName,
+    exercise_match_method: matchResult.exercise?.matchMethod,
+    diet_match_method: matchResult.diet?.matchMethod,
+    warnings: matchResult.warnings,
+    failures: matchResult.failures,
+  };
+  const exerciseName = matchResult.exercise?.planName;
+  const dietName = matchResult.diet?.planName;
 
   revalidatePath(ROUTES.dashboardCustomers);
   revalidatePath(ROUTES.superadminCustomers);
@@ -88,11 +99,14 @@ export async function assignCustomerProgramPlansAction(
   const parts: string[] = [];
   if (typeof exerciseName === "string") parts.push(`Exercise: ${exerciseName}`);
   if (typeof dietName === "string") parts.push(`Diet: ${dietName}`);
+  if (matchResult.warnings?.length) parts.push(matchResult.warnings.join(" · "));
 
   return {
     success: parts.length
       ? `Program plans assigned — ${parts.join(" · ")}`
-      : "Program plans updated.",
+      : matchResult.warnings?.length
+        ? matchResult.warnings.join(" · ")
+        : "Program plans updated.",
     result: payload,
   };
 }

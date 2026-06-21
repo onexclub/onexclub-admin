@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { saveCustomerQuestionnaireSectionAction } from "@/app/admin/customers/actions";
 import { useSupabaseBrowser } from "@/hooks/useSupabaseBrowser";
 
 import { fetchMergedDefinitionsForOutlet } from "../question-definitions.service";
@@ -51,7 +52,12 @@ export function useOnboardingFormsBundle(profileId: string, outletId: string | n
   };
 }
 
-export function useUpsertOnboardingSectionMutation(profileId: string, outletId: string | null) {
+export function useUpsertOnboardingSectionMutation(
+  profileId: string,
+  outletId: string | null,
+  /** When set (staff customer profile), saves via server action + service role. */
+  membershipId?: string | null,
+) {
   const supabase = useSupabaseBrowser();
   const qc = useQueryClient();
 
@@ -64,6 +70,20 @@ export function useUpsertOnboardingSectionMutation(profileId: string, outletId: 
       previous: QuestionsResponseRow | null | undefined;
     }) => {
       if (!outletId) throw new Error("Missing outlet");
+
+      if (membershipId) {
+        const result = await saveCustomerQuestionnaireSectionAction({
+          profileId,
+          outletId,
+          membershipId,
+          formName: payload.formName,
+          answers: payload.answers,
+          finalize: payload.finalize,
+        });
+        if (result.error) throw new Error(result.error);
+        return;
+      }
+
       await upsertQuestionsResponse({
         supabase,
         profileId,
@@ -77,6 +97,7 @@ export function useUpsertOnboardingSectionMutation(profileId: string, outletId: 
     },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: onboardingQueries.responses(profileId, outletId ?? "") });
+      await qc.refetchQueries({ queryKey: onboardingQueries.responses(profileId, outletId ?? "") });
     },
   });
 }

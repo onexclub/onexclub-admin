@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useCallback, useEffect, useMemo, useState } from "react";
+import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Pencil, X } from "lucide-react";
 import {
@@ -131,6 +131,11 @@ export function CustomerMembershipWorkspace(props: {
   const initialStep = parseProfileSection(searchParams.get("section"));
   const [step, setStep] = useState(initialStep);
   const [editing, setEditing] = useState(false);
+  /** Section-level save feedback — survives router.refresh during composite saves. */
+  const [sectionFeedback, setSectionFeedback] = useState<{ kind: "error" | "success"; message: string } | null>(
+    null,
+  );
+  const lastSectionSlugRef = useRef(searchParams.get("section"));
 
   const outletLabel = [membership.outlet?.name, membership.outlet?.city].filter(Boolean).join(" · ");
   const contactCopy = customerMemberContactCopy();
@@ -155,6 +160,7 @@ export function CustomerMembershipWorkspace(props: {
       const clamped = Math.min(WIZARD_REVIEW_STEP, Math.max(0, next));
       setStep(clamped);
       setEditing(false);
+      setSectionFeedback(null);
       const slug = profileSectionSlug(clamped);
       router.replace(`${basePath}?section=${slug}`, { scroll: false });
     },
@@ -162,9 +168,15 @@ export function CustomerMembershipWorkspace(props: {
   );
 
   useEffect(() => {
-    const fromUrl = parseProfileSection(searchParams.get("section"));
+    const slug = searchParams.get("section");
+    const fromUrl = parseProfileSection(slug);
     setStep(fromUrl);
-    setEditing(false);
+    // Only exit edit when the user navigates to a different section — not on router.refresh().
+    if (slug !== lastSectionSlugRef.current) {
+      lastSectionSlugRef.current = slug;
+      setEditing(false);
+      setSectionFeedback(null);
+    }
   }, [searchParams]);
 
   const canEditCurrentStep = useMemo(() => {
@@ -199,7 +211,7 @@ export function CustomerMembershipWorkspace(props: {
                 Cancel edit
               </Button>
             ) : (
-              <Button type="button" size="sm" onClick={() => setEditing(true)} className="gap-1.5">
+              <Button type="button" size="sm" onClick={() => { setSectionFeedback(null); setEditing(true); }} className="gap-1.5">
                 <Pencil className="size-3.5" aria-hidden />
                 Edit section
               </Button>
@@ -307,6 +319,8 @@ export function CustomerMembershipWorkspace(props: {
             bmi={bmi}
             bmiBand={bmiBand}
             bmiTone={bmiTone}
+            sectionFeedback={sectionFeedback}
+            onSectionFeedback={setSectionFeedback}
             onSaved={() => setEditing(false)}
           />
         ) : null}
@@ -391,7 +405,9 @@ function IdentityEditForm(props: {
         </label>
       </div>
       <label className="block">
-        <span className={labelCn}>Gender (required)</span>
+        <span className={labelCn}>
+          Gender <span className="text-rose-600 dark:text-rose-400">*</span>
+        </span>
         <div className="mt-2 grid grid-cols-3 gap-2">
           {MEMBER_INTAKE_GENDER_OPTIONS.map((o) => {
             const selected = genderForIntakeForm(p?.gender) === o.value;
@@ -423,11 +439,13 @@ function IdentityEditForm(props: {
   );
 }
 
-function BasicInfoVitalsEdit(props: {
+function VitalsOnlyEditForm(props: {
   membership: CustomerMembershipDetailMembership;
+  heightCm: string;
+  weightKg: string;
   onSaved: () => void;
 }) {
-  const { membership, onSaved } = props;
+  const { membership, heightCm, weightKg, onSaved } = props;
   const router = useRouter();
   const [state, action, pending] = useActionState(updateCustomerProfileAction, {} as SimpleActionState);
   const p = membership.profile;
@@ -440,8 +458,7 @@ function BasicInfoVitalsEdit(props: {
   }, [state.success, router, onSaved]);
 
   return (
-    <form action={action} className="space-y-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
-      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Body metrics</p>
+    <form action={action} className="space-y-4">
       <input type="hidden" name="profile_id" value={membership.profile_id} />
       <input type="hidden" name="membership_outlet_id" value={membership.outlet_id} />
       <input type="hidden" name="membership_id_for_revalidate" value={membership.id} />
@@ -450,39 +467,11 @@ function BasicInfoVitalsEdit(props: {
       <input type="hidden" name="email" value={p?.email ?? ""} />
       <input type="hidden" name="date_of_birth" value={p?.date_of_birth ?? ""} />
       <input type="hidden" name="gender" value={p?.gender ?? ""} />
-
-      <div className="grid gap-5 sm:grid-cols-2">
-        <label className="block">
-          <span className={labelCn}>Height (cm)</span>
-          <input
-            name="height_cm"
-            className={inputCn}
-            type="number"
-            min={50}
-            max={280}
-            step={0.1}
-            defaultValue={p?.height_cm != null ? String(p.height_cm) : ""}
-          />
-        </label>
-        <label className="block">
-          <span className={labelCn}>Weight (kg)</span>
-          <input
-            name="weight_kg"
-            className={inputCn}
-            type="number"
-            min={20}
-            max={400}
-            step={0.1}
-            defaultValue={p?.weight_kg != null ? String(p.weight_kg) : ""}
-          />
-        </label>
-      </div>
-
+      <input type="hidden" name="height_cm" value={heightCm} />
+      <input type="hidden" name="weight_kg" value={weightKg} />
       {state.error ? <p className="text-sm text-rose-600">{state.error}</p> : null}
-      {state.success ? <p className="text-sm text-emerald-700 dark:text-emerald-300">{state.success}</p> : null}
-
-      <Button type="submit" disabled={pending} variant="secondary">
-        {pending ? "Saving…" : "Save vitals"}
+      <Button type="submit" disabled={pending}>
+        {pending ? "Saving…" : "Save section"}
       </Button>
     </form>
   );
@@ -577,6 +566,8 @@ function IntakeSectionPanel(props: {
   bmi: number | null;
   bmiBand: ReturnType<typeof classifyBmi>;
   bmiTone: ReturnType<typeof bmiBandTone>;
+  sectionFeedback: { kind: "error" | "success"; message: string } | null;
+  onSectionFeedback: (feedback: { kind: "error" | "success"; message: string } | null) => void;
   onSaved: () => void;
 }) {
   const {
@@ -592,10 +583,30 @@ function IntakeSectionPanel(props: {
     bmi,
     bmiBand,
     bmiTone,
+    sectionFeedback,
+    onSectionFeedback,
     onSaved,
   } = props;
 
+  const router = useRouter();
   const formName = INTAKE_STEP_FORM[step];
+  const canEditVitals = step === 2 && canEditCustomerProfileFields(ctxRole);
+  const p = membership.profile;
+  const [heightCm, setHeightCm] = useState(p?.height_cm != null ? String(p.height_cm) : "");
+  const [weightKg, setWeightKg] = useState(p?.weight_kg != null ? String(p.weight_kg) : "");
+  const feedbackRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (sectionFeedback && feedbackRef.current) {
+      feedbackRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [sectionFeedback]);
+
+  useEffect(() => {
+    setHeightCm(p?.height_cm != null ? String(p.height_cm) : "");
+    setWeightKg(p?.weight_kg != null ? String(p.weight_kg) : "");
+  }, [p?.height_cm, p?.weight_kg, editing]);
+
   if (!formName) return null;
 
   if (!canViewOnboardingSection(ctxRole, formName)) {
@@ -617,11 +628,80 @@ function IntakeSectionPanel(props: {
   const answers = bundledResponses?.[formName]?.answers_json ?? {};
   const copy = SECTION_COPY[formName];
 
+  const feedbackBanner = sectionFeedback ? (
+    <div
+      ref={feedbackRef}
+      role="alert"
+      className={cn(
+        "rounded-xl border-2 px-4 py-3 text-sm font-medium",
+        sectionFeedback.kind === "error"
+          ? "border-rose-400 bg-rose-50 text-rose-900 dark:border-rose-600 dark:bg-rose-950/50 dark:text-rose-100"
+          : "border-emerald-400 bg-emerald-50 text-emerald-900 dark:border-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-100",
+      )}
+    >
+      {sectionFeedback.message}
+    </div>
+  ) : null;
+
   if (editing) {
+    const saveVitalsBeforeQuestionnaire = canEditVitals
+      ? async (): Promise<{ error?: string } | void> => {
+          const formData = new FormData();
+          formData.set("profile_id", membership.profile_id);
+          formData.set("membership_outlet_id", membership.outlet_id);
+          formData.set("membership_id_for_revalidate", membership.id);
+          formData.set("skip_revalidate", "1");
+          formData.set("full_name", p?.full_name ?? "");
+          formData.set("phone", p?.phone ?? "");
+          formData.set("email", p?.email ?? "");
+          formData.set("date_of_birth", p?.date_of_birth ?? "");
+          formData.set("gender", p?.gender ?? "");
+          formData.set("height_cm", heightCm);
+          formData.set("weight_kg", weightKg);
+          const result = await updateCustomerProfileAction({}, formData);
+          if (result.error) return { error: result.error };
+        }
+      : undefined;
+
     return (
       <div className="space-y-6">
-        {step === 2 && canEditCustomerProfileFields(ctxRole) ? (
-          <BasicInfoVitalsEdit membership={membership} onSaved={onSaved} />
+        {feedbackBanner}
+        {step === 2 && canEditVitals ? (
+          <div className="space-y-4 rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
+            <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Body metrics</p>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <label className="block">
+                <span className={labelCn}>
+                  Height (cm) <span className="text-rose-600 dark:text-rose-400">*</span>
+                </span>
+                <input
+                  name="height_cm"
+                  className={inputCn}
+                  type="number"
+                  min={50}
+                  max={280}
+                  step={0.1}
+                  value={heightCm}
+                  onChange={(e) => setHeightCm(e.target.value)}
+                />
+              </label>
+              <label className="block">
+                <span className={labelCn}>
+                  Weight (kg) <span className="text-rose-600 dark:text-rose-400">*</span>
+                </span>
+                <input
+                  name="weight_kg"
+                  className={inputCn}
+                  type="number"
+                  min={20}
+                  max={400}
+                  step={0.1}
+                  value={weightKg}
+                  onChange={(e) => setWeightKg(e.target.value)}
+                />
+              </label>
+            </div>
+          </div>
         ) : null}
         {canEditOnboardingSection(ctxRole, formName) ? (
           <FormSectionCard
@@ -634,6 +714,19 @@ function IntakeSectionPanel(props: {
             bundledResponse={bundledResponses?.[formName] ?? null}
             viewer={viewer}
             outletId={membership.outlet_id}
+            onSaved={() => {
+              router.refresh();
+              onSaved();
+            }}
+            onFeedback={onSectionFeedback}
+            beforeFlatSave={saveVitalsBeforeQuestionnaire}
+          />
+        ) : canEditVitals ? (
+          <VitalsOnlyEditForm
+            membership={membership}
+            heightCm={heightCm}
+            weightKg={weightKg}
+            onSaved={onSaved}
           />
         ) : (
           <p className="text-sm text-zinc-600">This section is read-only for your role.</p>
@@ -643,7 +736,9 @@ function IntakeSectionPanel(props: {
   }
 
   return (
-    <ReviewCard title={copy.title} className={step === 4 ? "sm:col-span-2" : undefined}>
+    <div className="space-y-4">
+      {feedbackBanner}
+      <ReviewCard title={copy.title} className={step === 4 ? "sm:col-span-2" : undefined}>
       {step === 2 ? (
         <>
           <ReviewRow label="Height" value={formatHeightCm(membership.profile?.height_cm)} />
@@ -674,7 +769,8 @@ function IntakeSectionPanel(props: {
       ) : (
         <ReviewRow label="Questions" value="None configured for this outlet" />
       )}
-    </ReviewCard>
+      </ReviewCard>
+    </div>
   );
 }
 

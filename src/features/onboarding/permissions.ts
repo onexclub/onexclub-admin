@@ -30,9 +30,21 @@ export function canViewOnboardingSection(role: UserRole, formName: OnboardingFor
 
 export function canEditOnboardingSection(role: UserRole, formName: OnboardingFormName): boolean {
   if (role === ROLES.CUSTOMER) return true; // enforced per-field via `editable_by_customer`
-  if (role === ROLES.SUPERADMIN || role === ROLES.GYM_OWNER || role === ROLES.BRANCH_ADMIN) return true;
-  if (role === ROLES.RECEPTIONIST) return formName === ONBOARDING_FORM.basic;
-  if (role === ROLES.TRAINER) return formName === ONBOARDING_FORM.health || formName === ONBOARDING_FORM.diet;
+  if (
+    role === ROLES.SUPERADMIN ||
+    role === ROLES.GYM_OWNER ||
+    role === ROLES.BRANCH_ADMIN ||
+    role === ROLES.RECEPTIONIST
+  ) {
+    return true;
+  }
+  if (role === ROLES.TRAINER) {
+    return (
+      formName === ONBOARDING_FORM.basic ||
+      formName === ONBOARDING_FORM.health ||
+      formName === ONBOARDING_FORM.diet
+    );
+  }
   return false;
 }
 

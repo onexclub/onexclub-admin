@@ -8,7 +8,8 @@ export type SectionCompletion = {
   percentRequired: number;
 };
 
-function isProvided(value: unknown): boolean {
+/** Whether an answer counts as filled for required-field checks (shared by wizard + profile edit). */
+export function isAnswerProvided(value: unknown): boolean {
   if (value === null || value === undefined) return false;
   if (typeof value === "string") return value.trim().length > 0;
   if (typeof value === "boolean") return true;
@@ -25,7 +26,7 @@ export function computeSectionCompletion(defs: QuestionDefinition[], answers: Re
 
   for (const d of defs) {
     const v = answers[d.question_key];
-    const ok = isProvided(v);
+    const ok = isAnswerProvided(v);
     if (d.is_required) {
       requiredTotal += 1;
       if (ok) requiredAnswered += 1;

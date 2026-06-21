@@ -46,8 +46,21 @@ function mapRawMessage(raw: string, fallback: string): string {
     return "Your session expired. Please sign in again.";
   }
 
-  if (lower.includes("permission denied") || lower.includes("forbidden") || lower.includes("not authorized")) {
-    return "You don't have permission to do that.";
+  if (
+    lower.includes("not allowed in a non-volatile") ||
+    lower.includes("cannot execute insert in a read-only") ||
+    lower.includes("cannot execute update in a read-only")
+  ) {
+    return "Save blocked by a database plan-matching function (migration 039). Run `supabase db push` or apply migration 039_pick_plan_template_volatile.sql in the Supabase SQL editor, then try again.";
+  }
+
+  if (
+    lower.includes("permission denied") ||
+    lower.includes("forbidden") ||
+    lower.includes("not authorized") ||
+    lower.includes("row-level security")
+  ) {
+    return "You don't have permission to save this section. Ask a branch lead if you need access.";
   }
 
   if (lower.includes("network") || lower.includes("fetch failed") || lower.includes("timeout")) {
